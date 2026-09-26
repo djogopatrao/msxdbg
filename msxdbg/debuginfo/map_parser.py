@@ -1,16 +1,29 @@
-"""Map file parser stub."""
-
+"""Contracts for parsing SDLD map files."""
 
 from __future__ import annotations
-from typing import Iterable, TypeVar, Dict
+
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable, Tuple
 
-T = TypeVar('T')
-MapData = Dict[str, T]  # type: ignore[misc]
+from .diagnostics import ParseResult
+from .model import Symbol
 
 
-def parse_map(lines: Iterable[str], origin: Path) -> MapData:
-    """Parse .map file stub. Returns empty dict when no files present."""
-    return {}
+@dataclass(frozen=True)
+class MapData:
+    """Public symbols collected from one map artifact."""
 
-__all__ = ['parse_map']
+    symbols: Tuple[Symbol, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "symbols", tuple(self.symbols))
+
+
+def parse_map(lines: Iterable[str], origin: Path) -> ParseResult[MapData]:
+    """Parse an SDLD map artifact without performing I/O."""
+
+    raise NotImplementedError("debuginfo.parse_map is not implemented")
+
+
+__all__ = ["MapData", "parse_map"]

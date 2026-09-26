@@ -1,13 +1,42 @@
-"""Header file parser stub."""
-
+"""Contracts for the restricted C-header type parser."""
 
 from __future__ import annotations
-from typing import Iterable, Dict
+
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Sequence, TYPE_CHECKING, Tuple
 
-def parse_header(lines: Iterable[str], origin: Path) -> Dict:
-    """Parse header file stub. Returns empty dict."""
-    return {}
+from .diagnostics import ParseResult
+from .model import TypeDef
+
+if TYPE_CHECKING:
+    from .macros import MacroDefinition
 
 
-__all__ = ['parse_header']
+@dataclass(frozen=True)
+class HeaderInput:
+    """Explicit header content and its physical path."""
+
+    path: Path
+    text: str
+
+
+@dataclass(frozen=True)
+class HeaderTypes:
+    """Types and macro definitions accepted from the restricted grammar."""
+
+    types: Tuple[TypeDef, ...] = ()
+    macros: Tuple["MacroDefinition", ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "types", tuple(self.types))
+        object.__setattr__(self, "macros", tuple(self.macros))
+
+
+def parse_headers(inputs: Sequence[HeaderInput]) -> ParseResult[HeaderTypes]:
+    """Parse explicitly supplied headers without importing the evaluator."""
+
+    raise NotImplementedError("debuginfo.parse_headers is not implemented")
+
+
+__all__ = ["HeaderInput", "HeaderTypes", "parse_headers"]
