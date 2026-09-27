@@ -4,7 +4,7 @@ from pathlib import Path
 import unittest
 
 from msxdbg.debuginfo.cdb_parser import CdbData, parse_cdb
-from msxdbg.debuginfo.diagnostics import Origin
+from msxdbg.debuginfo.diagnostics import Origin, ParseResult
 from msxdbg.debuginfo.header_parser import HeaderInput, HeaderTypes, parse_headers
 from msxdbg.debuginfo.index import CompletionCatalog, Project
 from msxdbg.debuginfo.loader import ImageArtifacts, ImageSpec, ProjectLoader, ProjectSpec
@@ -53,19 +53,39 @@ class OfflineDtoTests(unittest.TestCase):
 
 
 class ExplicitStubFailureTests(unittest.TestCase):
-    def test_parsers_fail_explicitly(self) -> None:
+    def test_parser_map_is_implemented(self) -> None:
+        """parse_map foi implementado (primeiro marco funcional)."""
+        # parse_map retorna ParseResult[MapData] ao invés de NotImplementedError
         origin = Path("input")
-        calls = (
-            lambda: parse_map([], origin),
-            lambda: parse_lst([], origin),
-            lambda: parse_cdb([], origin),
-            lambda: parse_headers([HeaderInput(origin, "")]),
-            lambda: parse_macro_definitions("", origin, MacroContext()),
-        )
-        for call in calls:
+        result = parse_map([], origin)
+        assert isinstance(result, ParseResult)
+        assert not isinstance(result.value, type(None))
+
+    def test_other_parsers_fail_explicitly(self) -> None:
+        """Outros parsers ainda são stubs que lançam NotImplementedError."""
+        origin = Path("input")
+        calls_list = [
+            ("parse_lst", lambda: parse_lst([], origin)),
+            ("parse_cdb", lambda: parse_cdb([], origin)),
+            ("parse_headers", lambda: parse_headers([HeaderInput(origin, "")])),
+            (
+                "parse_macro_definitions",
+                lambda: parse_macro_definitions("", origin, MacroContext()),
+            ),
+        ]
+
+        for name, call in calls_list:
             with self.subTest(call=call):
                 with self.assertRaises(NotImplementedError):
                     call()
+
+    def test_map_result_structure(self) -> None:
+        """Resultado de parse_map tem estrutura correta."""
+        result = parse_map([], Path("test.map"))
+        assert isinstance(result, ParseResult)
+        assert hasattr(result, "value") and hasattr(result, "diagnostics")
+        from msxdbg.debuginfo.map_parser import MapData
+        assert isinstance(result.value, MapData)
 
     def test_services_fail_explicitly(self) -> None:
         image_spec = ImageSpec(ImageId("resident"), Path("out"))

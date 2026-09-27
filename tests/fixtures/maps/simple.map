@@ -1,0 +1,5 @@
+# Minimal map: dois símbolos públicos válidos (< 0x10000)
+Value  Global
+
+   007e00  _g_code_base      main.o
+    cfff4d  s__HEAP           ""
