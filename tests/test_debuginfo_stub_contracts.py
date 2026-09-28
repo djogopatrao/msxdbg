@@ -67,11 +67,16 @@ class ExplicitStubFailureTests(unittest.TestCase):
         self.assertIsInstance(result.value, ListingData)
         self.assertEqual((), result.diagnostics)
 
+    def test_parse_cdb_is_implemented(self) -> None:
+        result = parse_cdb([], Path("input.cdb"))
+        self.assertIsInstance(result, ParseResult)
+        self.assertIsInstance(result.value, CdbData)
+        self.assertEqual((), result.diagnostics)
+
     def test_other_parsers_fail_explicitly(self) -> None:
         """Outros parsers ainda são stubs que lançam NotImplementedError."""
         origin = Path("input")
         calls_list = [
-            ("parse_cdb", lambda: parse_cdb([], origin)),
             ("parse_headers", lambda: parse_headers([HeaderInput(origin, "")])),
             (
                 "parse_macro_definitions",

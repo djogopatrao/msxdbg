@@ -111,10 +111,14 @@ Todas as funções acima são funções de módulo.
 | --- | --- | --- |
 | `map_parser.py` | `MapData(symbols)` | Tabelas `Value Global`, cabeçalhos repetidos, símbolos sem módulo |
 | `lst_parser.py` | `ListingData(module_name, areas, labels, globals, lines)`, `ListingSymbol(name, area, offset, origin)`, `ListingLine(area, offset, source, origin)`; export declarado tem offset desconhecido (`None`) | Colunas fixas, linha C pendente, áreas reentrantes, primeiro offset vence |
-| `cdb_parser.py` | `CdbData(functions, symbols, links, lines, types)` | Preservar identidades F/S/L/T e registros não suportados como diagnósticos |
+| `cdb_parser.py` | `CdbData(functions, symbols, links, lines, types, modules)` com DTOs brutos `CdbFunction`, `CdbSymbol`, `CdbLink`, `CdbLine`, `CdbType`, `CdbModule` | Preservar identidades F/S/L/T, escopos, tipos codificados e alocações; formatos não suportados geram diagnósticos |
 | `header_parser.py` | `HeaderInput(path, text)`, `HeaderTypes(types, macros)` | Gramática restrita de macros, rejeição por struct e propagação a dependentes |
 
 A associação de `L:` a F/S ocorre após coletar os registros, inclusive quando estiverem em arquivos diferentes da mesma imagem. O parser de headers não importa o avaliador de expressões do debugger: sua gramática de constantes é pequena, privada e sem registradores/símbolos vivos.
+
+`parse_cdb` não fabrica ids de imagem, endereços de variáveis ou limites de função. `CdbIdentity` preserva scope/nome/level/sublevel/block e a identidade textual integral. `M:` é metadado, não mudança implícita de escopo; globals permanecem sem módulo atribuído. `CdbStorage` conserva código, on-stack, offset canônico, registradores na ordem original e eventual alocação alternativa. `CdbSymbol.is_temporary` marca `sloc<N>` para filtragem obrigatória pelo loader/indexador; parâmetros ainda não são inferidos.
+
+Links F/S e marcadores X permanecem em `links`, sem classificação por formato do nome; o endereço X permanece inclusivo e sua ausência não vira limite estimado. Linhas C ficam em `lines`, com endereço e escopo; links A são ignorados. Registros repetidos são preservados com suas origens para reconciliação posterior. Tipos de declaração são cadeias opacas com tamanho/sinal; T aceita somente membros no formato demonstrado em `tests/fixtures/cdb/README.md` e nos testes D09. `CdbType` não é `TypeDef`: não certifica layout, tamanho, união versus struct ou grafo de referências.
 
 ### 3.4 `debuginfo/loader.py`
 
