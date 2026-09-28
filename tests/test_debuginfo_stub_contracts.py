@@ -61,11 +61,16 @@ class ExplicitStubFailureTests(unittest.TestCase):
         assert isinstance(result, ParseResult)
         assert not isinstance(result.value, type(None))
 
+    def test_parse_lst_is_implemented(self) -> None:
+        result = parse_lst([], Path("input.lst"))
+        self.assertIsInstance(result, ParseResult)
+        self.assertIsInstance(result.value, ListingData)
+        self.assertEqual((), result.diagnostics)
+
     def test_other_parsers_fail_explicitly(self) -> None:
         """Outros parsers ainda são stubs que lançam NotImplementedError."""
         origin = Path("input")
         calls_list = [
-            ("parse_lst", lambda: parse_lst([], origin)),
             ("parse_cdb", lambda: parse_cdb([], origin)),
             ("parse_headers", lambda: parse_headers([HeaderInput(origin, "")])),
             (

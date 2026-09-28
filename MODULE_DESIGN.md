@@ -110,7 +110,7 @@ Todas as funções acima são funções de módulo.
 | Módulo | Dados públicos próprios | Obrigações |
 | --- | --- | --- |
 | `map_parser.py` | `MapData(symbols)` | Tabelas `Value Global`, cabeçalhos repetidos, símbolos sem módulo |
-| `lst_parser.py` | `ListingData(module_name, areas, labels, globals, lines)` | Colunas fixas, linha C pendente, áreas reentrantes, primeiro offset vence |
+| `lst_parser.py` | `ListingData(module_name, areas, labels, globals, lines)`, `ListingSymbol(name, area, offset, origin)`, `ListingLine(area, offset, source, origin)`; export declarado tem offset desconhecido (`None`) | Colunas fixas, linha C pendente, áreas reentrantes, primeiro offset vence |
 | `cdb_parser.py` | `CdbData(functions, symbols, links, lines, types)` | Preservar identidades F/S/L/T e registros não suportados como diagnósticos |
 | `header_parser.py` | `HeaderInput(path, text)`, `HeaderTypes(types, macros)` | Gramática restrita de macros, rejeição por struct e propagação a dependentes |
 

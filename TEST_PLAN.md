@@ -88,7 +88,7 @@ Doubles: `FakeClock` avança sem dormir; token de cancelamento muda em passo pre
 | ID | Função | Casos e resultado esperado |
 | --- | --- | --- |
 | D07 | `parse_map` | Cabeçalho Value Global, nova página e símbolos sem módulo; endereços hex corretos; linhas fora de tabela ignoradas; linha malformada gera diagnóstico localizado e não destrói tabela válida |
-| D08 | `parse_lst` | Endereço em head[4:12], linha C anexada à próxima instrução, .module/default stem, exports e labels por área; reentrância mantém offset; primeiro registro no offset vence; EQU deslocado e bytes de relocação não são instruções inventadas |
+| D08 | `parse_lst` | **Implementado e coberto por testes sintéticos em `tests/test_parsing_lst.py`.** Endereço em head[4:12], linha C anexada à próxima instrução, .module/default stem, exports e labels por área; reentrância mantém offset; primeiro registro no offset vence; EQU deslocado e bytes de relocação não são instruções inventadas |
 | D09 | `parse_cdb` | M/F/S/L/T fora de ordem; preserva escopo completo, registradores/offset negativos/sinal; L de função, variável e linha não confundidos; exit ausente mantido desconhecido; sloc preservado para filtragem ou ocultado conforme contrato, nunca exposto como local útil |
 | D10 | `parse_headers` | Comentários, múltiplos headers, macros constantes e arrays, layout packed e aninhado; tipo desconhecido, ponteiro declarador, bitfield, union e ciclo geram erro por struct; dependentes inválidos e tipos independentes corretos; não segue include nem executa expressão Python |
 
