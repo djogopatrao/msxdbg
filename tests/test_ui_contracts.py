@@ -19,6 +19,6 @@ class UiContractTests(unittest.TestCase):
 
     def test_cli_module_import_has_no_execution(self) -> None:
         module = importlib.import_module("msxdbg.__main__")
-        with self.assertRaises(NotImplementedError): module.main([])
+        self.assertTrue(callable(module.main))
 
 if __name__ == "__main__": unittest.main()

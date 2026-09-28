@@ -20,6 +20,12 @@ Nas sinopses, `<nome>` é um argumento obrigatório, `[argumento]` é opcional, 
 
 ### `resolve`: consulta offline
 
+Implementado no incremento offline: `python -m msxdbg resolve` e `python -m msxdbg --version`.
+Os demais subcomandos e o manifesto ainda não estão disponíveis. `resolve` aceita também
+`image::0xADDR` ou `image::arquivo:linha`; os ids são o nome de cada diretório `--out`,
+ou seu path absoluto quando os nomes dos diretórios colidem. Ambiguidades mostram
+os ids candidatos. Overrides `--map` só são aceitos com um único `--out`.
+
 ```text
 msxdbg resolve --out <DIR> [--out <DIR> ...] [--map <FILE> ...] <ALVO>
 ```

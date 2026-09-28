@@ -7,7 +7,7 @@ from msxdbg.debuginfo.cdb_parser import CdbData, parse_cdb
 from msxdbg.debuginfo.diagnostics import Origin, ParseResult
 from msxdbg.debuginfo.header_parser import HeaderInput, HeaderTypes, parse_headers
 from msxdbg.debuginfo.index import CompletionCatalog, Project
-from msxdbg.debuginfo.loader import ImageArtifacts, ImageSpec, ProjectLoader, ProjectSpec
+from msxdbg.debuginfo.loader import ImageArtifacts, ImageSpec, ProjectSpec
 from msxdbg.debuginfo.lst_parser import ListingData, parse_lst
 from msxdbg.debuginfo.macros import (
     MacroCatalog,
@@ -98,18 +98,9 @@ class ExplicitStubFailureTests(unittest.TestCase):
         assert isinstance(result.value, MapData)
 
     def test_services_fail_explicitly(self) -> None:
-        image_spec = ImageSpec(ImageId("resident"), Path("out"))
-        loader = ProjectLoader()
-        project = Project([])
         sources = SourceRepository()
         catalog = MacroCatalog()
 
-        with self.assertRaises(NotImplementedError):
-            loader.discover(image_spec)
-        with self.assertRaises(NotImplementedError):
-            loader.load(ProjectSpec([image_spec]))
-        with self.assertRaises(NotImplementedError):
-            project.completion_catalog()
         with self.assertRaises(NotImplementedError):
             sources.invalidate()
         with self.assertRaises(NotImplementedError):

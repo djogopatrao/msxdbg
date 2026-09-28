@@ -182,6 +182,7 @@ class TypeDef:
     referenced_type: Optional[TypeId] = None
     fields: Tuple[Field, ...] = ()
     array_count: Optional[int] = None
+    evidence: Tuple[Origin, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.name or not self.category:
@@ -191,6 +192,7 @@ class TypeDef:
         if self.array_count is not None and self.array_count < 0:
             raise ValueError("array count must not be negative")
         object.__setattr__(self, "fields", tuple(self.fields))
+        object.__setattr__(self, "evidence", tuple(self.evidence))
 
 
 @dataclass(frozen=True)
@@ -217,6 +219,7 @@ class Area:
     base: Optional[int] = None
     limit: Optional[int] = None
     evidence: Tuple[Origin, ...] = ()
+    limit_provenance: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -231,6 +234,16 @@ class Area:
 
 
 @dataclass(frozen=True)
+class BlockScope:
+    """CDB lexical identity and observed execution range."""
+
+    level: int
+    sublevel: Optional[int]
+    block: int
+    extent: AddressRange
+
+
+@dataclass(frozen=True)
 class Function:
     """Function and its proven source/address extent."""
 
@@ -241,6 +254,9 @@ class Function:
     end_provenance: Optional[str] = None
     lines: Tuple[SourceSpan, ...] = ()
     blocks: Tuple[AddressRange, ...] = ()
+    locations: Tuple[CodeLocation, ...] = ()
+    scopes: Tuple[BlockScope, ...] = ()
+    evidence: Tuple[Origin, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -251,6 +267,8 @@ class Function:
             raise ValueError("function end must follow its entry")
         object.__setattr__(self, "lines", tuple(self.lines))
         object.__setattr__(self, "blocks", tuple(self.blocks))
+        for attribute in ("locations", "scopes", "evidence"):
+            object.__setattr__(self, attribute, tuple(getattr(self, attribute)))
 
 
 @dataclass(frozen=True)
@@ -264,12 +282,17 @@ class Variable:
     type_id: Optional[TypeId]
     storage: Storage
     is_parameter: bool = False
+    scope: str = "global"
+    level: Optional[int] = None
+    sublevel: Optional[int] = None
+    evidence: Tuple[Origin, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.name:
             raise ValueError("variable name must not be empty")
         if self.block is not None and self.block < 0:
             raise ValueError("variable block must not be negative")
+        object.__setattr__(self, "evidence", tuple(self.evidence))
 
 
 @dataclass(frozen=True)
@@ -282,11 +305,12 @@ class Module:
     labels: Tuple[Symbol, ...] = ()
     exports: Tuple[Symbol, ...] = ()
     lines: Tuple[SourceSpan, ...] = ()
+    locations: Tuple[CodeLocation, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.name:
             raise ValueError("module name must not be empty")
-        for attribute in ("areas", "labels", "exports", "lines"):
+        for attribute in ("areas", "labels", "exports", "lines", "locations"):
             object.__setattr__(self, attribute, tuple(getattr(self, attribute)))
 
 
@@ -322,6 +346,7 @@ class Image:
     variables: Tuple[Variable, ...] = ()
     types: Tuple[TypeDef, ...] = ()
     diagnostics: Tuple[Diagnostic, ...] = ()
+    locations: Tuple[CodeLocation, ...] = ()
 
     def __post_init__(self) -> None:
         for attribute in (
@@ -331,6 +356,7 @@ class Image:
             "variables",
             "types",
             "diagnostics",
+            "locations",
         ):
             object.__setattr__(self, attribute, tuple(getattr(self, attribute)))
 
@@ -383,6 +409,7 @@ __all__ = [
     "AddressRange",
     "Area",
     "CodeLocation",
+    "BlockScope",
     "Field",
     "Function",
     "FunctionId",

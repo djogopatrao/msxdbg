@@ -98,24 +98,24 @@ Para D07–D10 adicionar arquivo vazio, fim truncado, linha muito longa e regist
 
 | ID | Função | Casos e resultado esperado |
 | --- | --- | --- |
-| D11 | `ProjectLoader.discover` | Ordem estável mesmo com ordem de diretório alterada; None descobre, tupla explícita substitui; lista vazia explícita não dispara descoberta; diretório ausente/arquivo inacessível tem diagnóstico |
-| D12 | `ProjectLoader.load` | Imagem simples e FX-MULTI; todos os CDBs reconciliados, inclusive links cruzados; bases majoritárias com avisos, empate sem escolha; ids duplicados falham antes de parsing; tipos e macros têm origem; arquivo essencial ausente falha, struct opcional inválida não invalida projeto |
+| D11 | `ProjectLoader.discover` | **Implementado; testes de descoberta/carga em `tests/test_project_loading.py`.** Ordem estável mesmo com ordem de diretório alterada; None descobre, tupla explícita substitui; lista vazia explícita não dispara descoberta; diretório ausente/arquivo inacessível tem diagnóstico |
+| D12 | `ProjectLoader.load` | **Núcleo MAP/LST/CDB implementado e testado; headers/macros com origem permanecem pendentes e geram diagnóstico explícito.** Imagem simples e FX-MULTI; todos os CDBs reconciliados, inclusive links cruzados; bases majoritárias com avisos, empate sem escolha; ids duplicados falham antes de parsing; tipos e macros têm origem; arquivo essencial ausente falha, struct opcional inválida não invalida projeto |
 | D13 | `read_project_spec` | Após definir esquema: JSON válido/versionado, paths relativos ao manifesto, duplicatas e versão desconhecida; rejeitar opções conflitantes; teste do schema fica pendente até sua definição, sem inventá-lo |
 
 ### `debuginfo/index.py`
 
 | ID | Método | Casos e resultado esperado |
 | --- | --- | --- |
-| D14 | `Project.resolve` | Início/fim de módulo, gaps, imagem filtrada e sobreposição; propriedade vem da base, não nearest_symbol; áreas não suportadas permanecem não resolvidas; fallback limitado traz evidência |
-| D15 | `Project.resolve_line` | Linha exata, próxima com código e inexistência posterior; map.c não casa worldmap.c; mesmo basename em duas pastas retorna ambiguidade; imagem e linha efetiva preservadas |
-| D16 | `Project.lookup_symbol` | Nome exato antes de alias sem `_`; ausente e múltiplos candidatos; símbolos iguais em duas imagens não colapsam |
-| D17 | `Project.nearest_symbol` | Exato/offset positivo, endereço antes do primeiro símbolo, empate entre imagens; resultado não altera propriedade do módulo |
-| D18 | `Project.function_at` | Entry, último byte, fim exclusivo, função seguinte, saída inclusiva convertida; função final sem limite não captura toda memória; statics homônimos distintos |
-| D19 | `Project.find_variable` | Local em contexto, global/static de fallback, homônimos e contexto ambíguo; símbolo fora de escopo não escolhido silenciosamente |
-| D20 | `Project.variables_in_scope` | Antes da primeira linha retorna vazio; parâmetros por bloco sem linhas; limites de bloco; filtros locals/parameters/all; sloc não aparece |
-| D21 | `Project.lookup_type` | Primitivo, struct por imagem, alias, ausente/ambíguo; layout rejeitado não é oferecido como utilizável |
-| D22 | `Project.type_by_id` | Id exato e referências aninhadas; id inexistente produz erro de contrato, não tipo padrão |
-| D23 | `Project.completion_catalog` | Fontes/símbolos/tipos previstos, nomes determinísticos, sem acesso ao emulador; preservar qualificações necessárias |
+| D14 | `Project.resolve` | **Implementado no incremento offline; testes em `tests/test_project_loading.py`.** Início/fim de módulo, gaps, imagem filtrada e sobreposição; propriedade vem da base, não nearest_symbol; áreas não suportadas permanecem não resolvidas; fallback limitado traz evidência |
+| D15 | `Project.resolve_line` | **Implementado no incremento offline; testes em `tests/test_project_loading.py`.** Linha exata, próxima com código e inexistência posterior; map.c não casa worldmap.c; mesmo basename em duas pastas retorna ambiguidade; imagem e linha efetiva preservadas |
+| D16 | `Project.lookup_symbol` | **Implementado no incremento offline; testes em `tests/test_project_loading.py`.** Nome exato antes de alias sem `_`; ausente e múltiplos candidatos; símbolos iguais em duas imagens não colapsam |
+| D17 | `Project.nearest_symbol` | **Implementado no incremento offline; testes em `tests/test_project_loading.py`.** Exato/offset positivo, endereço antes do primeiro símbolo, empate entre imagens; resultado não altera propriedade do módulo |
+| D18 | `Project.function_at` | **Implementado no incremento offline; testes em `tests/test_project_loading.py`.** Entry, último byte, fim exclusivo, função seguinte, saída inclusiva convertida; função final sem limite não captura toda memória; statics homônimos distintos |
+| D19 | `Project.find_variable` | **Implementado no incremento offline; testes em `tests/test_project_loading.py`.** Local em contexto, global/static de fallback, homônimos e contexto ambíguo; símbolo fora de escopo não escolhido silenciosamente |
+| D20 | `Project.variables_in_scope` | **Implementado no incremento offline; testes em `tests/test_project_loading.py`.** Antes da primeira linha retorna vazio; parâmetros por bloco sem linhas; limites de bloco; filtros locals/parameters/all; sloc não aparece |
+| D21 | `Project.lookup_type` | **Implementado no incremento offline; testes em `tests/test_project_loading.py`.** Primitivo, struct por imagem, alias, ausente/ambíguo; layout rejeitado não é oferecido como utilizável |
+| D22 | `Project.type_by_id` | **Implementado no incremento offline; testes em `tests/test_project_loading.py`.** Id exato e referências aninhadas; id inexistente produz erro de contrato, não tipo padrão |
+| D23 | `Project.completion_catalog` | **Implementado no incremento offline; testes em `tests/test_project_loading.py`.** Fontes/símbolos/tipos previstos, nomes determinísticos, sem acesso ao emulador; preservar qualificações necessárias |
 
 ### `debuginfo/sources.py` e `debuginfo/macros.py`
 
@@ -366,9 +366,9 @@ Fixar largura e opções de cor nos goldens; normalizar somente paths temporári
 
 | ID | Função | Casos e resultado esperado |
 | --- | --- | --- |
-| C01 | `main` | Dispatch resolve/shell/exec/version; códigos 0/1/2; erro de inicialização/cleanup em stderr; import não executa main |
-| C02 | `build_argument_parser` | Opções e repetições documentadas, obrigatórios e uso inválido; não adicionar flags de macro/timeout antes de definir contrato |
-| C03 | `run_resolve` | FX-MULTI e arquivo:linha, stdout de sucesso, unresolved/ambiguidade; nenhuma instanciação de Target/Session/socket |
+| C01 | `main` | **Parcial: resolve/version e códigos 0/1/2; shell/exec pendentes.** Dispatch resolve/shell/exec/version; códigos 0/1/2; erro de inicialização/cleanup em stderr; import não executa main |
+| C02 | `build_argument_parser` | **Parcial: opções do resolve/version.** Opções e repetições documentadas, obrigatórios e uso inválido; não adicionar flags de macro/timeout antes de definir contrato |
+| C03 | `run_resolve` | **Implementado; goldens sintéticos e testes de subprocesso em `tests/test_resolve_cli.py`.** FX-MULTI e arquivo:linha, stdout de sucesso, unresolved/ambiguidade; nenhuma instanciação de Target/Session/socket |
 | C04 | `run_shell` | Composição correta; attach ao alvo fornecido; finally fecha em quit/EOF/exceção; falha de cleanup não mascara erro original; não inicia emulador |
 | C05 | `run_exec` | Mesma Session em todos os comandos; timeout configurado; finally e código de saída da limpeza; reset/load impedidos |
 | C06 | Pacote e `__init__.py` | Instalação/import/entrada CLI quando packaging existir; `--version` sem artefatos/socket; exports coerentes, sem side effects |

@@ -145,6 +145,12 @@ def read_project_spec(path: Path) -> ProjectSpec: ...
 
 O loader abre arquivos, chama parsers, reconcilia bases e CDBs, resolve tipos e cria índices. Conflitos majoritários de base são preservados; empate sem evidência suficiente não escolhe uma base arbitrária. O manifesto externo continua pendente de esquema final; `ProjectSpec` estabiliza o contrato interno sem antecipar opções de CLI.
 
+Implementação atual: descoberta recursiva determinística sem seguir diretórios simbólicos; overrides `maps`/`cdbs` são paths fornecidos pelo chamador, e tuplas vazias desativam a descoberta daquela espécie. Cada imagem exige ao menos um MAP com símbolos utilizáveis. Artefatos descobertos/explicitados que não podem ser lidos falham com `ProjectLoadError`; registros inválidos continuam como diagnósticos dos parsers. CDB e LST ausentes permitem consultas MAP, sem inventar linhas ou funções.
+
+A reconciliação privada em `_reconcile.py` reúne todos os CDBs da imagem, conserva conflitos e filtra `sloc`. Bases `_CODE` usam um voto por export; empate fica desconhecido. O limite LST `último offset + 16` é inclusivo e identificado como `lst-fallback`; a próxima base o limita. Fim CDB inclusivo é convertido para exclusivo; na ausência de exit, usa-se próxima entrada ou limites `s__CODE`/`l__CODE` comprovados. Sem essas provas, a última função só resolve nos endereços conhecidos, sem intervalo infinito. Linhas CDB válidas prevalecem sobre LST, com diagnóstico em divergências.
+
+`_types.py` resolve primitivos Z80, ponteiros de dois bytes, arrays e o subconjunto packed de T demonstrado nos testes. Referências por ponteiro podem ser recursivas; composição por valor recursiva, sobreposição, padding não demonstrado e dependências inválidas ficam indisponíveis. Tipos e variáveis carregam evidências. O suporte a headers e macros não está implementado neste incremento: `struct_headers` gera `load.headers-unavailable` e a carga de código continua; `MacroCatalog` é entregue vazio. D12 permanece parcial quanto a esses serviços. `SourceRepository` também conserva seu contrato de stub.
+
 ### 3.5 `debuginfo/index.py`
 
 `Project` é a fachada de consulta imutável, com índices privados por imagem.
@@ -172,6 +178,8 @@ class Project:
     def type_by_id(self, id: TypeId) -> TypeDef: ...
     def completion_catalog(self) -> CompletionCatalog: ...
 ```
+
+O modelo agora conserva `locations: tuple[CodeLocation, ...]` em `Image`, `Module` e `Function`; `Function.scopes` usa `BlockScope(level, sublevel, block, extent)`. `Area.limit_provenance` distingue limites estimados. `Variable` acrescenta escopo, level/sublevel e evidências; `TypeDef` acrescenta evidências. Coleções continuam imutáveis. Ausência de linhas completas de função não prova que uma variável seja parâmetro.
 
 `LineMatch` inclui linha solicitada, linha efetiva e `CodeLocation`; `SymbolMatch` inclui símbolo e offset. `SymbolContext` contém imagem/módulo/função resolvidos e PC de escopo; contexto ambíguo não deve ser convertido silenciosamente numa imagem. `VariableKind` distingue locals/parameters/all. `CompletionCatalog` contém apenas metadados offline de nomes e arquivos.
 
@@ -615,6 +623,8 @@ def run_resolve(options: ResolveOptions) -> int: ...
 def run_shell(options: ShellOptions) -> int: ...
 def run_exec(options: ExecOptions) -> int: ...
 ```
+
+O incremento offline implementa `main`, `build_argument_parser` e `run_resolve` somente para `resolve` e `--version`. Alvos: hexadecimal `0xADDR` e `arquivo:linha`, opcionalmente `image::`. Ids CLI são nomes dos diretórios de saída quando únicos, ou paths absolutos quando os nomes colidem. `--map` com múltiplos `--out` é recusado antes da carga. `run_shell`, `run_exec` e o manifesto permanecem pendentes. O texto de fonte vem do listing quando disponível; leitura de arquivos de fonte pertence ao próximo incremento de `SourceRepository`.
 
 `ResolveOptions`, `ShellOptions`, `ExecOptions` são configurações normalizadas do CLI. `resolve` constrói loader/projeto/fontes e renderiza sem instanciar transporte ou sessão. Restringe alvos à sintaxe offline documentada, mesmo que Project ofereça consultas mais amplas.
 
