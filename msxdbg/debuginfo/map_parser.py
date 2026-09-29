@@ -10,9 +10,13 @@ from typing import Iterable, Optional, Tuple
 from .diagnostics import Diagnostic, Origin, ParseResult
 
 
-_TABLE_HEADER = re.compile(r"^\s*Value\s+Global\s*$", re.IGNORECASE)
+_TABLE_HEADER = re.compile(
+    r"^\s*Value\s+Global(?:\s+Global\s+Defined\s+In\s+Module)?\s*$",
+    re.IGNORECASE,
+)
 _PAGE_HEADER = re.compile(r"^\s*ASxxxx\s+Linker\b", re.IGNORECASE)
 _SYMBOL_ROW = re.compile(r"^\s*([0-9A-Fa-f]{4,8})\s+(\S+)(?:\s+(\S+))?\s*$")
+_TABLE_SEPARATOR = re.compile(r"^\s*-+(?:\s+-+)*\s*$")
 
 
 @dataclass(frozen=True)
@@ -47,7 +51,7 @@ def _diagnostic(code: str, message: str, path: Path, line: int) -> Diagnostic:
 
 def _parse_row(raw_line: str, path: Path, line_number: int) -> MapSymbol | Diagnostic | None:
     stripped = raw_line.strip()
-    if not stripped or set(stripped) == {"-"}:
+    if not stripped or _TABLE_SEPARATOR.match(raw_line):
         return None
 
     match = _SYMBOL_ROW.match(raw_line)

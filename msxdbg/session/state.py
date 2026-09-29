@@ -70,6 +70,7 @@ class SelectionState:
 class StopCache:
     memory: Dict[Tuple[int, int], bytes] = field(default_factory=dict)
     frames: Tuple["Frame", ...] = ()
+    frame_termination_reason: Optional[str] = None
     function_states: Dict[FunctionId, object] = field(default_factory=dict)
 
 

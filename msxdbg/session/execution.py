@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Optional, Protocol
 
 from msxdbg.debuginfo.index import Project
-from msxdbg.target.api import Target
+from msxdbg.target.api import ExecutionStatus, Target
 from .results import StopResult
 from .state import StepMode
 
@@ -50,7 +50,37 @@ class ExecutionController:
         self._clock = clock
 
     def run(self, request: ExecutionRequest, hooks: ExecutionHooks, cancel: CancellationToken) -> StopResult:
-        raise NotImplementedError("ExecutionController.run is not implemented")
+        hooks.invalidate()
+        if request.kind == ExecutionKind.CONTINUE:
+            self._target.continue_execution()
+        elif request.kind == ExecutionKind.STEP:
+            self._target.step_into()
+        elif request.kind == ExecutionKind.NEXT:
+            self._target.step_over()
+        elif request.kind == ExecutionKind.STEPI:
+            self._target.step_into()
+        elif request.kind == ExecutionKind.FINISH:
+            self._target.step_out()
+        elif request.kind == ExecutionKind.UNTIL:
+            if request.address is None:
+                raise ValueError("until requires an address")
+            self._target.run_to(request.address)
+        else:
+            raise ValueError(f"unsupported execution kind: {request.kind}")
+
+        timeout = request.timeout_seconds
+        deadline = None if timeout is None else self._clock.monotonic() + timeout
+        while self._target.execution_status() != ExecutionStatus.STOPPED:
+            if cancel.is_cancelled():
+                self._target.interrupt()
+            elif deadline is not None and self._clock.monotonic() >= deadline:
+                self._target.interrupt()
+            else:
+                self._clock.sleep(0.05)
+                continue
+            if self._target.execution_status() != ExecutionStatus.STOPPED:
+                raise TimeoutError("target did not confirm interruption")
+        return hooks.capture_stop()
 
 
 __all__ = ["CancellationToken", "Clock", "ExecutionController", "ExecutionHooks", "ExecutionKind", "ExecutionRequest"]

@@ -1,0 +1,8 @@
+; Listing with line C association pending - comment line before instruction
+                                    10  ; source line from previous C code
+
+     00020000 c3              [20]
+
+    .area _HOME
+
+   .globl _HOME_start

@@ -21,10 +21,25 @@ class RegisterSet:
         object.__setattr__(self, "values", MappingProxyType(dict(self.values)))
 
     def get(self, name: str) -> int:
-        raise NotImplementedError("RegisterSet.get is not implemented")
+        key = name.upper()
+        if key in self.values:
+            return self.values[key]
+        pairs = {"AF": ("A", "F"), "BC": ("B", "C"), "DE": ("D", "E"),
+                 "HL": ("H", "L"), "IX": ("IXH", "IXL"), "IY": ("IYH", "IYL")}
+        if key in pairs and all(part in self.values for part in pairs[key]):
+            high, low = pairs[key]
+            return (self.values[high] << 8) | self.values[low]
+        for pair, (high, low) in pairs.items():
+            if key == high and pair in self.values:
+                return (self.values[pair] >> 8) & 0xFF
+            if key == low and pair in self.values:
+                return self.values[pair] & 0xFF
+        raise KeyError(name)
 
     def width(self, name: str) -> int:
-        raise NotImplementedError("RegisterSet.width is not implemented")
+        key = name.upper()
+        self.get(key)
+        return 16 if key in {"AF", "BC", "DE", "HL", "IX", "IY", "SP", "PC", "AF'", "BC'", "DE'", "HL'"} else 8
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,8 @@
+; Test invalid lines - should generate diagnostic but not crash parser
+.area _VALIDAREA
+     00050000 c3          [ 1]
+
+.invalid line here garbage
+    00050080 ed          [ 2]
+
+.outside .area unrecognized directive for validarea

@@ -62,6 +62,22 @@ class TestParseMapMultipleValid:
         assert isinstance(result.value, MapData)
         assert len(result.value.symbols) == 2
 
+    def test_sdld_header_with_defined_in_module_columns(self) -> None:
+        """Aceita o cabeçalho emitido pelo SDLD 05.50 em builds reais."""
+        result = parse_map([
+            "         Value  Global                             Global Defined In Module\n",
+            "         -----  --------------------------------   ------------------------\n",
+            "     00000100  s__CODE\n",
+            "     00001234  _main                              main\n",
+        ], Path("real-sdld.map"))
+
+        assert [(symbol.name, symbol.address, symbol.module_key)
+                for symbol in result.value.symbols] == [
+            ("s__CODE", 0x0100, None),
+            ("_main", 0x1234, "main"),
+        ]
+        assert result.diagnostics == ()
+
 
 class TestParseMapInvalidLineGeneratesDiagnostic:
     """Linha inválida gera diagnostic explícito."""

@@ -1,0 +1,11 @@
+; Test area reentry - same areas should continue offsets from last usage
+.area _MYAREA
+    00030000        [ 1]  start_label
+
+     000300a0 c3          [ 2]
+
+.endarea
+
+.area _MYAREA
+
+    00040100 c3          [ 3]

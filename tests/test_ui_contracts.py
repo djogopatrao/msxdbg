@@ -12,10 +12,16 @@ class UiContractTests(unittest.TestCase):
         self.assertFalse(CommandResult("bad", False, error=error).ok)
         with self.assertRaises(ValueError): CommandResult("bad", False)
 
-    def test_ui_operations_fail_explicitly(self) -> None:
-        with self.assertRaises(NotImplementedError): build_registry()
-        with self.assertRaises(NotImplementedError): parse_target("main")
-        with self.assertRaises(NotImplementedError): CommandRegistry().specifications()
+    def test_complete_registry_and_target_parser_are_available(self) -> None:
+        registry = build_registry()
+        self.assertEqual(24, len(registry.specifications()))
+        self.assertEqual("print", registry.lookup("?").name)
+        self.assertEqual("until", registry.lookup("advance").name)
+        self.assertEqual("quit", registry.lookup("q").name)
+        self.assertFalse(registry.lookup("reset").repeatable)
+        self.assertFalse(registry.lookup("load").repeatable)
+        self.assertEqual("main", parse_target("main").symbol)
+        self.assertEqual((), CommandRegistry().specifications())
 
     def test_cli_module_import_has_no_execution(self) -> None:
         module = importlib.import_module("msxdbg.__main__")

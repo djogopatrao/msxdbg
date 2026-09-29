@@ -8,11 +8,26 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 import re
 import sys
+import time
 from typing import Optional, Sequence, Tuple
 
 from .debuginfo.diagnostics import ProjectLoadError
 from .debuginfo.loader import ImageSpec, ProjectLoader, ProjectSpec
 from .debuginfo.model import ImageId
+from .debuginfo.macros import MacroContext
+from .eval.evaluator import Evaluator
+from .eval.values import ValueDecoder, ValueLimits
+from .session.core import Session
+from .session.safety import SafetyGate
+from .session.state import SessionConfig, SignatureSpec, StepMode
+from .target.api import TargetCapabilities, TargetError
+from .target.openmsx import OpenMSXTarget
+from .target.transport import (ConnectionMode, OpenMSXTransport, TransportConfig,
+                               discover_socket)
+from .ui.application import CommandApplication
+from .ui.batch import BatchPolicy, BatchRunner
+from .ui.commands import (CommandContext, DisassemblyCursor, NavigationState,
+                          SourceCursor)
 
 
 @dataclass(frozen=True)
@@ -26,12 +41,26 @@ class ResolveOptions:
 class ShellOptions:
     outputs: Tuple[Path, ...]
     socket: Optional[Path] = None
+    maps: Optional[Tuple[Path, ...]] = None
+    cdbs: Optional[Tuple[Path, ...]] = None
+    source_roots: Tuple[Path, ...] = ()
+    struct_headers: Tuple[Path, ...] = ()
+    signature: Optional[SignatureSpec] = None
+    mode: StepMode = StepMode.SOURCE
 
 
 @dataclass(frozen=True)
 class ExecOptions:
     outputs: Tuple[Path, ...]
     commands: Tuple[str, ...]
+    timeout_seconds: float = 30.0
+    socket: Optional[Path] = None
+    maps: Optional[Tuple[Path, ...]] = None
+    cdbs: Optional[Tuple[Path, ...]] = None
+    source_roots: Tuple[Path, ...] = ()
+    struct_headers: Tuple[Path, ...] = ()
+    signature: Optional[SignatureSpec] = None
+    mode: StepMode = StepMode.SOURCE
 
 
 def build_argument_parser() -> ArgumentParser:
@@ -42,7 +71,39 @@ def build_argument_parser() -> ArgumentParser:
     resolve.add_argument('--out', type=Path, action='append', required=True)
     resolve.add_argument('--map', type=Path, action='append', dest='maps')
     resolve.add_argument('target', help='[image::]0xADDR or [image::]file:line')
+    def live(name, help_text):
+        command = subcommands.add_parser(name, help=help_text)
+        command.add_argument('--out', type=Path, action='append', required=True)
+        command.add_argument('--map', type=Path, action='append', dest='maps')
+        command.add_argument('--cdb', type=Path, action='append', dest='cdbs')
+        command.add_argument('--socket', type=Path)
+        command.add_argument('--source-root', type=Path, action='append', default=[])
+        command.add_argument('--struct-header', type=Path, action='append', default=[])
+        command.add_argument('--verify-signature', type=_signature)
+        command.add_argument('--mode', choices=('c', 'source', 'asm', 'assembly'), default='c')
+        return command
+    live('shell', 'attach an interactive debugger to openMSX')
+    execute = live('exec', 'execute debugger commands and emit JSON Lines')
+    execute.add_argument('-c', '--command', action='append', required=True, dest='commands')
+    execute.add_argument('--json', action='store_true', required=True)
+    execute.add_argument('--timeout', type=_positive_timeout, default=30.0)
     return parser
+
+
+def _positive_timeout(raw: str) -> float:
+    try: value = float(raw)
+    except ValueError: raise ValueError('timeout must be a positive number') from None
+    if value <= 0: raise ValueError('timeout must be a positive number')
+    return value
+
+
+def _signature(raw: str) -> SignatureSpec:
+    address, separator, encoded = raw.partition('=')
+    if not separator or not re.fullmatch(r'0[xX][0-9A-Fa-f]+', address):
+        raise ValueError('signature must use 0xADDR=HEXBYTES')
+    if not encoded or len(encoded) % 2 or not re.fullmatch(r'[0-9A-Fa-f]+', encoded):
+        raise ValueError('signature bytes must be non-empty even-length hexadecimal')
+    return SignatureSpec(int(address, 16), bytes.fromhex(encoded))
 
 
 def _target(raw):
@@ -118,12 +179,112 @@ def run_resolve(options: ResolveOptions) -> int:
     return 0
 
 
+class _SystemClock:
+    def monotonic(self) -> float: return time.monotonic()
+    def sleep(self, seconds: float) -> None: time.sleep(seconds)
+
+
+def _project_spec(outputs, maps=None, cdbs=None, source_roots=(), struct_headers=()):
+    if not outputs:
+        raise ValueError('at least one --out is required')
+    resolved = [Path(output).resolve() for output in outputs]
+    if len(set(resolved)) != len(resolved):
+        raise ValueError('duplicate --out directories')
+    if len(outputs) != 1 and (maps is not None or cdbs is not None):
+        raise ValueError('--map/--cdb overrides require exactly one --out')
+    names = Counter(Path(output).name for output in outputs)
+    images = tuple(ImageSpec(
+        ImageId(Path(output).name if names[Path(output).name] == 1
+                else str(Path(output).resolve())),
+        Path(output), maps, cdbs,
+    ) for output in outputs)
+    return ProjectSpec(images, tuple(source_roots), tuple(struct_headers))
+
+
+def _compose_context(options, input_origin: str):
+    spec = _project_spec(options.outputs, options.maps, options.cdbs,
+                         options.source_roots, options.struct_headers)
+    loaded = ProjectLoader().load(spec)
+    socket_path = discover_socket(options.socket)
+    target = _build_live_target(socket_path)
+    timeout = options.timeout_seconds if isinstance(options, ExecOptions) else None
+    session = Session(loaded.project, target,
+        SessionConfig(options.signature, options.mode, execution_timeout=timeout),
+        SafetyGate(), _SystemClock())
+    evaluator = Evaluator(loaded.project, ValueDecoder(), ValueLimits())
+    context = CommandContext(session, loaded.project, loaded.sources, loaded.macros,
+        MacroContext(), evaluator, NavigationState(SourceCursor(), DisassemblyCursor()),
+        input_origin, timeout)
+    return loaded, context
+
+
+def _build_live_target(socket_path: Path) -> OpenMSXTarget:
+    """Select optimized transport only after read-only capability probes."""
+    optimized = OpenMSXTransport(TransportConfig(
+        socket_path, 5.0, ConnectionMode.PERSISTENT
+    ))
+    try:
+        first = optimized.request("expr 0")
+        second = optimized.request("expr 0")
+        block = optimized.request(
+            "binary encode hex [debug read_block memory 0 1]"
+        )
+        if ((first.status, first.text.strip()) != ("ok", "0")
+                or (second.status, second.text.strip()) != ("ok", "0")
+                or block.status != "ok"
+                or not re.fullmatch(r"[0-9A-Fa-f]{2}", block.text.strip())):
+            raise ValueError("openMSX optimization probe was rejected")
+    except (TargetError, ValueError):
+        optimized.close()
+        fallback = OpenMSXTransport(TransportConfig(socket_path, 5.0))
+        return OpenMSXTarget(fallback, TargetCapabilities())
+    return OpenMSXTarget(
+        optimized, TargetCapabilities(persistent=True, block_read=True)
+    )
+
+
+def _report_diagnostics(loaded) -> None:
+    for diagnostic in loaded.diagnostics:
+        print(f'{diagnostic.severity}: {diagnostic.code}: {diagnostic.message}', file=sys.stderr)
+
+
+def _run_live(options, batch: bool) -> int:
+    context = None
+    try:
+        loaded, context = _compose_context(options, 'batch' if batch else 'interactive')
+        _report_diagnostics(loaded)
+        context.session.attach()
+        application = (CommandApplication(batch=BatchRunner(
+            policy=BatchPolicy(options.timeout_seconds))) if batch else CommandApplication())
+        if batch:
+            return application.run_exec(options.commands, context, sys.stdout, sys.stderr)
+        return application.run_shell(context, sys.stderr)
+    except ValueError as exc:
+        print(f'error: {exc}', file=sys.stderr)
+        if context is not None:
+            try: context.session.close()
+            except Exception: pass
+        return 2
+    except ProjectLoadError as exc:
+        print(f'error: {exc}', file=sys.stderr)
+        for diagnostic in exc.diagnostics:
+            print(f'{diagnostic.code}: {diagnostic.message}', file=sys.stderr)
+        return 1
+    except Exception as exc:
+        print(f'error: {type(exc).__name__}: {exc}', file=sys.stderr)
+        if context is not None:
+            try: context.session.close()
+            except Exception as cleanup:
+                print(f'cleanup error: {type(cleanup).__name__}: {cleanup}', file=sys.stderr)
+        return 1
+
+
 def run_shell(options: ShellOptions) -> int:
-    raise NotImplementedError('run_shell is not implemented')
+    return _run_live(options, False)
 
 
 def run_exec(options: ExecOptions) -> int:
-    raise NotImplementedError('run_exec is not implemented')
+    return _run_live(options, True)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -139,6 +300,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if options.command == 'resolve':
         return run_resolve(ResolveOptions(tuple(options.out), options.target,
             tuple(options.maps) if options.maps is not None else None))
+    mode = StepMode.SOURCE if options.mode in ('c', 'source') else StepMode.ASSEMBLY
+    common = dict(outputs=tuple(options.out), socket=options.socket,
+        maps=tuple(options.maps) if options.maps is not None else None,
+        cdbs=tuple(options.cdbs) if options.cdbs is not None else None,
+        source_roots=tuple(options.source_root), struct_headers=tuple(options.struct_header),
+        signature=options.verify_signature, mode=mode)
+    if options.command == 'shell':
+        return run_shell(ShellOptions(**common))
+    if options.command == 'exec':
+        return run_exec(ExecOptions(commands=tuple(options.commands),
+            timeout_seconds=options.timeout, **common))
     parser.error('a command is required')
 
 
