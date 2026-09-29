@@ -2,7 +2,7 @@
 
 Base: [MODULE_DESIGN.md](MODULE_DESIGN.md), [COMMANDS.md](COMMANDS.md), [ARCHITECTURE.md](ARCHITECTURE.md), [BACKLOG.md](BACKLOG.md) e o comportamento histórico explicitamente preservado de [SPEC.md](SPEC.md).
 
-Este documento planeja testes; não contém resultados de execução. Neste diretório ainda não há implementação, stubs nem fixtures reais. As regras F17/F18 prevalecem sobre print legado onde diferem. Funções repetidas no desenho são um único contrato; métodos de Protocol são testados pelas implementações e pelos consumidores, não pela instanciação do protocolo.
+Este documento planeja e rastreia testes; resultados de execução pertencem ao CI ou à revisão da mudança. O repositório contém contratos estruturais e o primeiro incremento funcional, `parse_map`, com fixtures sintéticas de MAP. Os demais componentes podem continuar como stubs até seus incrementos próprios. As regras F17/F18 prevalecem sobre print legado onde diferem. Funções repetidas no desenho são um único contrato; métodos de Protocol são testados pelas implementações e pelos consumidores, não pela instanciação do protocolo.
 
 ## 1. Estratégia e critérios gerais
 
@@ -87,7 +87,7 @@ Doubles: `FakeClock` avança sem dormir; token de cancelamento muda em passo pre
 
 | ID | Função | Casos e resultado esperado |
 | --- | --- | --- |
-| D07 | `parse_map` | Cabeçalho Value Global, nova página e símbolos sem módulo; endereços hex corretos; linhas fora de tabela ignoradas; linha malformada gera diagnóstico localizado e não destrói tabela válida |
+| D07 | `parse_map` | **Implementado e coberto por testes.** Cabeçalho Value Global, nova página e símbolos sem módulo; endereços hex corretos; linhas fora de tabela ignoradas; linha malformada gera diagnóstico localizado e não destrói tabela válida |
 | D08 | `parse_lst` | **Implementado e coberto por testes sintéticos em `tests/test_parsing_lst.py`.** Endereço em head[4:12], linha C anexada à próxima instrução, .module/default stem, exports e labels por área; reentrância mantém offset; primeiro registro no offset vence; EQU deslocado e bytes de relocação não são instruções inventadas |
 | D09 | `parse_cdb` | **Implementado e coberto por fixtures sintéticas e `tests/test_parsing_cdb.py`; links F/S/X preservados para reconciliação no loader; T restrito ao subconjunto documentado.** M/F/S/L/T fora de ordem; preserva escopo completo, registradores/offset negativos/sinal; L de função, variável e linha não confundidos; exit ausente mantido desconhecido; sloc preservado para filtragem ou ocultado conforme contrato, nunca exposto como local útil |
 | D10 | `parse_headers` | Comentários, múltiplos headers, macros constantes e arrays, layout packed e aninhado; tipo desconhecido, ponteiro declarador, bitfield, union e ciclo geram erro por struct; dependentes inválidos e tipos independentes corretos; não segue include nem executa expressão Python |
@@ -132,7 +132,7 @@ Para D07–D10 adicionar arquivo vazio, fim truncado, linha muito longa e regist
 
 ### `target/api.py`
 
-Executar T03–T20 para FakeTarget e OpenMSXTarget com transporte scripted. Protocol Target não possui implementação própria. Usar transcrições independentes no adaptador; FakeTarget não precisa conhecer Tcl.
+T03–T20 estão implementados para FakeTarget e OpenMSXTarget, com transcrições independentes do transporte em `tests/test_phase6_openmsx_target.py`; a aprovação live permanece na etapa opt-in. Protocol Target não possui implementação própria e FakeTarget não conhece Tcl.
 
 | ID | Método | Casos e resultado esperado |
 | --- | --- | --- |
@@ -140,7 +140,7 @@ Executar T03–T20 para FakeTarget e OpenMSXTarget com transporte scripted. Prot
 | T02 | `RegisterSet.width` | 8/16 bits conforme registrador, metades e nome inválido; mesma normalização de get |
 | T03 | `Target.execution_status` | running/stopped; resposta ilegível não vira stopped |
 | T04 | `Target.read_registers` | Conjunto completo, widths corretas; campo ausente/fora do formato gera erro, não zero |
-| T05 | `Target.read_memory` | 0 bytes sem leitura remota, 1 byte em 65535, 64 KiB desde zero, 00/FF; negativos e overflow rejeitados; truncamento remoto gera erro |
+| T05 | `Target.read_memory` | **Fallback agregado e caminho `read_block` binário-seguro implementados.** 0 bytes sem leitura remota, 1 byte em 65535, 64 KiB desde zero, 00/FF; negativos e overflow rejeitados; truncamento remoto gera erro |
 | T06 | `Target.disassemble` | Endereço/count válidos, operandos longos, bytes e tamanhos; resposta inválida não cria instrução; count inválido explicitamente rejeitado |
 | T07 | `Target.read_pages` | Quatro páginas, slots primários/expandidos, MapperIO e fallback; segmento desconhecido permanece desconhecido |
 | T08 | `Target.continue_execution` | Uma emissão, aceitação não implica parada; timeout pós-envio com outcome_unknown, sem retry |
@@ -163,11 +163,11 @@ DTOs Instruction/PageState/RemoteBreakpoint/TargetCapabilities e exceções: val
 
 | ID | Método/função | Casos e resultado esperado |
 | --- | --- | --- |
-| T21 | `OpenMSXTransport.request` | Handshake fragmentado, reply em todos os pontos possíveis de fragmentação, ok/nok e entidades XML; eventos entre replies; timeout parcial, EOF e XML inválido; uma requisição pendente, conexão defeituosa descartada |
-| T22 | `OpenMSXTransport.drain_events` | Ordem de chegada, segunda drenagem vazia, fila limitada; overflow observável segundo política que deve ser definida, nunca crescimento sem limite |
-| T23 | `OpenMSXTransport.close` | Antes/depois de conexão/erro e duas chamadas; nenhuma operação do alvo |
-| T24 | `discover_socket` | Path explícito, mais recente por mtime e ausência; erro menciona attach-only; empate deve ter política determinística definida; usar filesystem temporário, nunca sockets reais do usuário |
-| T25 | `OpenMSXTarget.__init__` | Apenas armazena transporte/capacidades; nenhum comando ou detecção mutável; T03–T20 cobrem os métodos herdados do contrato |
+| T21 | `OpenMSXTransport.request` | **Modos per-command e persistent implementados e cobertos em `tests/test_phase6_transport.py`.** Handshake e replies XML incrementais, fragmentação byte a byte, ok/nok, entidades, eventos intercalados, timeout antes/depois do envio, EOF, XML inválido; persistente descarta conexão defeituosa sem retry de mutação |
+| T22 | `OpenMSXTransport.drain_events` | **Implementado com fila limitada a 256 eventos e overflow observável.** Preserva ordem, eventos podem compartilhar blocos do handshake/reply e a segunda drenagem retorna vazio |
+| T23 | `OpenMSXTransport.close` | **Implementado e idempotente para per-command.** Impede novas requisições e não executa nenhuma operação no alvo |
+| T24 | `discover_socket` | **Implementado e coberto em `tests/test_target_contracts.py`.** Path explícito aceita somente socket Unix; descoberta escolhe o mais recente por mtime, desempata pelo caminho e ignora arquivos comuns; ausência gera `TargetUnavailable` com mensagem attach-only |
+| T25 | `OpenMSXTarget.__init__` | **Implementado; T03–T20 cobrem o adaptador com transporte scripted.** Apenas armazena transporte/capacidades; nenhum comando ou detecção mutável |
 | T26 | `FakeTarget.__init__` | Memória/regs/script isolados de objetos de entrada; tamanho de memória inválido rejeitado; aceita breakpoints preexistentes na preparação prevista |
 | T27 | `FakeTarget.inject_failure` | Falha antes não aplica; after_apply aplica e falha; chamada seguinte não repete mutação implicitamente |
 | T28 | `FakeTarget.calls` | Ordem e argumentos tipados, snapshot não mutável; chamada inesperada falha em vez de ser aceita |
@@ -309,6 +309,8 @@ Adicionar caso de variável CDB tipada na aritmética: somar valor, não endere�
 
 ### `ui/results.py` e `ui/registry.py`
 
+Os payloads de apresentação são uma união fechada implementada em `ui/results.py`: parada, breakpoint(s), registradores, páginas, símbolo, fonte, disassembly, frames, valores, mensagens, ajuda e ações. Os renderizadores rejeitam tipos desconhecidos em vez de serializar objetos internos implicitamente.
+
 | ID | Alvo | Casos e resultado esperado |
 | --- | --- | --- |
 | U01 | CommandResult/CommandError/UiAction | ok versus erro coerentes; falha sem payload de sucesso; detalhes estruturados; ação clear/quit não executada pelo renderizador |
@@ -319,10 +321,12 @@ Adicionar caso de variável CDB tipada na aritmética: somar valor, não endere�
 
 ### `ui/commands.py`: dispatcher e cada handler
 
+O encaminhamento dos handlers U09–U32 para os casos de uso de Session, avaliação e ações de UI está implementado e coberto inicialmente por `tests/test_phase5_handlers.py`. A aprovação funcional individual continua condicionada aos serviços ainda explicitamente pendentes — especialmente `SourceRepository`, `MemoryMapService` e `SafetyGate` — e aos payloads/renderizadores completos da etapa seguinte.
+
 | ID | Função | Casos e resultado esperado |
 | --- | --- | --- |
-| U06 | `build_registry` | 24 comandos documentados e todos os aliases, inclusive bt/advance/?; help/completion derivam dos mesmos specs; reset/load não repetíveis |
-| U07 | `parse_target` | Decimal, 0x, símbolo e path:linha; imagem:: antes de separador de linha; rejeitar alvo incompleto/linha inválida e aritmética não prometida para break |
+| U06 | `build_registry` | **Registro completo implementado e coberto por `tests/test_phase5_registry.py`.** 24 comandos documentados e todos os aliases, inclusive bt/advance/?; help/completion derivam dos mesmos specs; reset/load não repetíveis |
+| U07 | `parse_target` | **Implementado e coberto por formas válidas e inválidas.** Decimal, 0x, símbolo e path:linha; imagem:: antes de separador de linha; rejeitar alvo incompleto/linha inválida e aritmética não prometida para break |
 | U08 | `CommandDispatcher.dispatch` | Alias canonicalizado, argumento completo preservado, erro de parser/handler vira CommandResult; política de segurança não removida; não interpreta shell pipes/; como comandos extras |
 | U09 | `handle_break` | Único cria; ambíguo/ausente não cria; endereço bruto sem fonte funciona |
 | U10 | `handle_delete` | Número obrigatório válido; não aceita id remoto; erro não apaga acompanhamento |
@@ -355,10 +359,10 @@ Adicionar caso de variável CDB tipada na aritmética: somar valor, não endere�
 
 | ID | Método | Casos e resultado esperado |
 | --- | --- | --- |
-| U33 | `Repl.run` | Histórico em memória; vazio repete permitido, nunca reset/load; EOF/quit retornam; Ctrl-C no prompt não encerra, durante execução cancela; erro de comando mantém loop |
-| U34 | `BatchRunner.run` | Ordem, um envelope por executado, primeiro erro interrompe, stdout puro, deadline finito; reset/load recusados; não escreve sucesso para comando não executado |
+| U33 | `Repl.run` | **Política de repetição e ações implementada.** Histórico em memória; vazio repete permitido, nunca reset/load; EOF/quit retornam; Ctrl-C no prompt/despacho não encerra; erro de comando mantém loop |
+| U34 | `BatchRunner.run` | **Deadline, origem batch, restauração de contexto e erros estruturados implementados.** Ordem, um envelope por executado, primeiro erro interrompe, stdout puro, deadline global `--timeout` positivo (30 s por padrão); reset/load/clear recusados antes de efeitos; não escreve sucesso para comando não executado |
 | U35 | `TextRenderer.render` | Golden para cada espécie de payload; markup malicioso em nome/fonte escapado; cálculo hex/bin, sinais e memória distintos; nenhuma dependência viva |
-| U36 | `JsonRenderer.encode` | Objeto sem newline, versão/índice/ok/error coerentes; número e display_base preservados, inteiros grandes sem conversão float; bytes explicitamente codificados, NaN/Infinity normalizados; schema não expõe campos internos acidentalmente |
+| U36 | `JsonRenderer.encode` | Objeto sem newline; envelope v1 sempre contém schema_version/command_index/command/ok/data/warnings/error; número e display_base preservados, inteiros grandes sem conversão float; bytes explicitamente codificados, NaN/Infinity normalizados; schema não expõe campos internos acidentalmente |
 
 Fixar largura e opções de cor nos goldens; normalizar somente paths temporários e ids variáveis previamente identificados. Não normalizar valores, endereços ou mensagens que constituem o comportamento sob teste. Repl pode usar input/output injetados, sem desktop ou teclado real.
 
@@ -366,11 +370,11 @@ Fixar largura e opções de cor nos goldens; normalizar somente paths temporári
 
 | ID | Função | Casos e resultado esperado |
 | --- | --- | --- |
-| C01 | `main` | **Parcial: resolve/version e códigos 0/1/2; shell/exec pendentes.** Dispatch resolve/shell/exec/version; códigos 0/1/2; erro de inicialização/cleanup em stderr; import não executa main |
-| C02 | `build_argument_parser` | **Parcial: opções do resolve/version.** Opções e repetições documentadas, obrigatórios e uso inválido; não adicionar flags de macro/timeout antes de definir contrato |
+| C01 | `main` | **Dispatch de resolve/shell/exec/version implementado.** Códigos 0/1/2; erro de inicialização/cleanup em stderr; import não executa main |
+| C02 | `build_argument_parser` | **Opções de resolve/shell/exec implementadas, incluindo `--timeout` e `--json`.** Opções e repetições documentadas, obrigatórios e uso inválido |
 | C03 | `run_resolve` | **Implementado; goldens sintéticos e testes de subprocesso em `tests/test_resolve_cli.py`.** FX-MULTI e arquivo:linha, stdout de sucesso, unresolved/ambiguidade; nenhuma instanciação de Target/Session/socket |
-| C04 | `run_shell` | Composição correta; attach ao alvo fornecido; finally fecha em quit/EOF/exceção; falha de cleanup não mascara erro original; não inicia emulador |
-| C05 | `run_exec` | Mesma Session em todos os comandos; timeout configurado; finally e código de saída da limpeza; reset/load impedidos |
+| C04 | `run_shell` | **Composição, tratamento de falhas e attach live implementados e validados no openMSX 21.0.** Finally fecha em quit/EOF/exceção; falha de cleanup não mascara erro original; não inicia emulador |
+| C05 | `run_exec` | **Composição, mesma Session, timeout, lifecycle e JSON live validados com os artefatos reais do msxciv.** Finally e código de saída da limpeza; reset/load impedidos |
 | C06 | Pacote e `__init__.py` | Instalação/import/entrada CLI quando packaging existir; `--version` sem artefatos/socket; exports coerentes, sem side effects |
 
 ## 10. Cenários integrados e rastreabilidade
@@ -379,17 +383,17 @@ Fixar largura e opções de cor nos goldens; normalizar somente paths temporári
 | --- | --- | --- |
 | I01 | LST+MAP de duas imagens → resolve → break → parada | F02/F03/F12, B4/B5/B6/B11 |
 | I02 | continue/step/next/finish/until com parada tardia | B7, consistência e cancelamento |
-| I03 | Breakpoints próprios e externos, erro na exclusão, EOF | B3 e propriedade/cleanup |
+| I03 | **Coberto com FakeTarget para breakpoint próprio e cleanup; casos externos/erro remoto permanecem nos testes de BreakpointManager.** Breakpoints próprios e externos, erro na exclusão, EOF | B3 e propriedade/cleanup |
 | I04 | Snapshot → caller frame → locals → retomar → contexto antigo | Frames, cache e indisponibilidade correta |
 | I05 | Macros carregadas → cálculo constante → texto/JSON | F04/F17/F18, B1/B2; zero I/O vivo |
 | I06 | Macro MY_OFFSET → leitura tipada → mudança de parada | F18 e invalidação de cache |
 | I07 | Texto com `<>&` em transporte/nomes e rich markup | B10 e escaping de UI |
 | I08 | disassemble símbolo, aliases e completion | B8/B9 |
-| I09 | exec: sucesso, erro intermediário e falha de limpeza | F01, um envelope por comando executado |
-| I10 | reset/load via lote/repeat/permit inválido | Segurança em UI e sessão; somente FakeTarget |
+| I09 | **Coberto por `tests/test_phase5_integration.py`, batch e CommandApplication.** exec: sucesso, erro intermediário e falha de limpeza | F01, um envelope por comando executado |
+| I10 | **Coberto para recusa em lote e repetição; emissão autorizada aguarda SafetyGate concreto.** reset/load via lote/repeat/permit inválido | Segurança em UI e sessão; somente FakeTarget |
 | I11 | Sem CDB/sem fonte/struct rejeitada/assinatura pending | Degradação explícita sem valores presumidos |
 
-L live: attach/read regs/memory/disasm, breakpoints próprios e stepping num programa isolado preparado pelo operador. Nunca iniciar openMSX, inserir mídia, alterar velocidade ou automatizar reset/load. Os testes desses comandos usam doubles. Verificar capacidade de socket persistente e bloco conforme T01/T02 do BACKLOG; comparar bytes e round trips, sem depender do disco real do projeto do usuário.
+L live: a suíte opt-in está implementada em `tests/integration/test_openmsx_live.py`, documentada no README adjacente e foi executada no openMSX 21.0 em 2026-09-29. `MSXDBG_LIVE_SOCKET` habilita somente attach/read regs/memory/disasm/pages/listagem de breakpoints; `MSXDBG_LIVE_OUT` acrescenta exec JSON read-only. Criação/remoção de breakpoint, um único `step_in` e otimizações exigem opt-ins literais separados. Nunca iniciar openMSX, inserir mídia, alterar velocidade ou automatizar reset/load. Ausência de ambiente produz skip, nunca aprovação. Resultados e limites estão em `PHASE6_VALIDATION.md`.
 
 ## 11. Funcionalidades adiadas: testes ao promover o requisito
 
@@ -413,7 +417,7 @@ F01–F04/F12/F17/F18 já estão cobertos pelas matrizes principais. F05 depende
 
 Resolver antes de congelar expectativas correspondentes:
 
-- Esquema externo de manifesto, opção/default de timeout e política de clear no batch.
+- Esquema externo de manifesto; timeout e política de clear no batch foram definidos na fase 5.
 - Limites numéricos de expansão e comportamento de overflow da fila de eventos.
 - Seleção determinística em empate de mtime dos sockets e confirmação de capabilities live.
 - Configuração externa de contexto de macros e política quando o frame necessário para resolver um nome ainda não foi capturado. Nunca classificar nome desconhecido como constante por conveniência.

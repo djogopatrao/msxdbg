@@ -46,7 +46,7 @@ Executar uma sequência de comandos no mesmo contexto de sessão, usando `msxdbg
 
 **Aceitação:** ordem determinística; parar no primeiro erro; stdout exclusivamente JSON Lines; erros estruturados e diagnósticos auxiliares em stderr; códigos de saída 0/1/2 conforme COMMANDS. Reset/load são recusados inclusive com `yes`. Toda execução tem prazo finito configurável, cancelamento e limpeza de breakpoints próprios; falha de limpeza resulta em saída não zero. Testes cobrem parada normal, erro intermediário, timeout e valores indisponíveis.
 
-**Dependências:** Session, registro de comandos, renderização JSON e FakeTarget. **Pendente:** nome/default da opção de timeout e política explícita para comandos exclusivamente de terminal.
+**Dependências:** Session, registro de comandos, renderização JSON e FakeTarget. **Contrato definido:** `--timeout` limita o lote inteiro, aceita segundos positivos e usa 30 segundos por padrão; `clear`, `reset` e `load` são recusados em lote com `command-not-available-in-batch` antes de qualquer efeito no target.
 
 ### F02 — Nomes C e seleção explícita de imagem
 
@@ -174,8 +174,8 @@ Estes itens habilitam funcionalidades ou aumentam confiabilidade, mas não são 
 
 | ID | Trabalho | Critério de conclusão | Dependências/consumidores |
 | --- | --- | --- | --- |
-| T01 | Conexão persistente | Validar múltiplos comandos, XML fragmentado/eventos, perda de conexão; benchmark e fallback por comando; sem retry de mutações | Target/transport |
-| T02 | Leitura em bloco e strings progressivas | Comparar bytes 00/FF e limites com fallback; ler strings em blocos limitados até NUL/256; medir round trips | print, memória, frames |
+| T01 | Conexão persistente | **Implementada com sondagem read-only, métricas de conexões e fallback per-command; validação live opt-in disponível.** Múltiplos comandos, XML fragmentado/eventos e perda de conexão cobertos; sem retry de mutações | Target/transport |
+| T02 | Leitura em bloco e strings progressivas | **`debug read_block` implementado atrás de capability, com hex binário-seguro e comparação live opt-in contra fallback.** Strings progressivas continuam incremento separado | print, memória, frames |
 | T03 | Fixtures e gramática CDB T | Coleção real com compilador/flags e catálogo de construções suportadas/rejeitadas | F05/F06 |
 | T04 | ABI de float Z80 | Fixture compilada com valores conhecidos; verificar bytes e documentar interpretação | f32/inferência de tipos |
 | T05 | Frames, epílogos e limites de função | Fixtures de múltiplos retornos e função sem exit marker; recusa explícita onde não há prova | backtrace, locals/args |

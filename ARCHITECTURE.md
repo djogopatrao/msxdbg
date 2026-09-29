@@ -321,21 +321,21 @@ A cobertura por função e módulo, os níveis de teste e os critérios de aceit
 | 2 | Target, FakeTarget, sessão e execução | Cenários de parada, timeout, Ctrl-C, finish, breakpoints e limpeza sem emulador |
 | 3 | AST, macros, calculadora, tipos primitivos, print e info | F04/F17/F18: cálculos sem I/O vivo, hex/bin, expansão limitada, compatibilidade tipada e leituras explícitas |
 | 4 | CDB completo, frames e tipos compostos | Escopos, statics homônimos, chamadores e recusa de frames incertos |
-| 5 | REPL completo e exec JSON | Registro cobre comandos/aliases; golden tests textuais e contrato JSON |
-| 6 | Validações live e otimizações | Protocolo persistente e blocos medidos; integração opt-in documentada |
+| 5 | REPL completo e exec JSON | **Implementado e validado offline com FakeTarget e live com openMSX 21.0.** Registro cobre comandos/aliases; golden tests textuais, contrato JSON e execução batch read-only com artefatos reais |
+| 6 | Validações live e otimizações | **Concluída em 2026-09-29.** Transporte per-command/persistente, Target completo, integração opt-in, breakpoint, stepping e leitura de 64 KiB por bloco validados; evidências em `PHASE6_VALIDATION.md` |
 
 Testes de parser usam saídas reais SDCC versionadas com compilador e flags. FakeTarget fornece memória, registradores, sequência de PCs e injeção de falhas, sem conhecer Tcl. Testes de transporte usam um socket local falso para fragmentação XML, escaping, mensagens intercaladas e perda de conexão após mutação.
 
 Testar especialmente que reset/load são recusados em lote e repetição, que breakpoints externos são preservados e que valores de uma parada anterior não sobrevivem à retomada. Medir round trips por comando e custo de step antes de otimizar.
 
-A integração live deve conectar a um openMSX preparado previamente pelo operador com um programa de teste isolado. A suíte não inicia emulador, insere mídia ou executa reset/load automaticamente. Os 344 testes e fixtures mencionados na SPEC precisam ser obtidos; não estão presentes neste diretório e não foram executados nesta elaboração.
+A integração live conecta a um openMSX preparado previamente pelo operador. A suíte não inicia emulador, insere mídia ou executa reset/load automaticamente. Os testes históricos citados na SPEC não são usados como evidência implícita; os resultados efetivamente executados estão registrados em `PHASE6_VALIDATION.md`.
 
 ## 12. Pendências que exigem evidência
 
 | Questão | Como validar | Comportamento até validar |
 | --- | --- | --- |
-| Conexão persistente openMSX | Experimento de vários comandos no mesmo socket e eventos intercalados | Uma conexão por comando |
-| Leitura binária em bloco | Verificar Tcl instalado e bytes 00/FF em fixture conhecida | Leitura agregada em Tcl |
+| Conexão persistente openMSX | **Validada no openMSX 21.0:** múltiplos comandos usam uma conexão; eventos, falhas e descarte são cobertos | Sondagem read-only no attach; fallback per-command quando não comprovada |
+| Leitura binária em bloco | **Validada no openMSX 21.0:** `binary encode hex [debug read_block ...]`, 64 KiB e bytes 00/FF | Capability habilitada pela mesma sondagem; leitura agregada em Tcl permanece fallback |
 | Layout de float SDCC Z80 | Compilar fixture com valores conhecidos e comparar bytes | Não inferir ABI de float silenciosamente |
 | Tipos em registros `T:` | Obter fixtures reais com arrays, ponteiros e structs | Subconjunto explícito e fallback de headers |
 | Limites de áreas e funções | Conferir artefatos de linker e funções sem exit marker | Informar limites desconhecidos |

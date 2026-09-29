@@ -109,7 +109,7 @@ Todas as funções acima são funções de módulo.
 
 | Módulo | Dados públicos próprios | Obrigações |
 | --- | --- | --- |
-| `map_parser.py` | `MapData(symbols)` | Tabelas `Value Global`, cabeçalhos repetidos, símbolos sem módulo |
+| `map_parser.py` | `MapData(symbols: tuple[MapSymbol, ...])`, `MapSymbol(name, address, module_key, origin)` | Tabelas `Value Global`, cabeçalhos repetidos, símbolos sem módulo; `module_key` é convertido em `ModuleId` somente pelo loader, que conhece a imagem |
 | `lst_parser.py` | `ListingData(module_name, areas, labels, globals, lines)`, `ListingSymbol(name, area, offset, origin)`, `ListingLine(area, offset, source, origin)`; export declarado tem offset desconhecido (`None`) | Colunas fixas, linha C pendente, áreas reentrantes, primeiro offset vence |
 | `cdb_parser.py` | `CdbData(functions, symbols, links, lines, types, modules)` com DTOs brutos `CdbFunction`, `CdbSymbol`, `CdbLink`, `CdbLine`, `CdbType`, `CdbModule` | Preservar identidades F/S/L/T, escopos, tipos codificados e alocações; formatos não suportados geram diagnósticos |
 | `header_parser.py` | `HeaderInput(path, text)`, `HeaderTypes(types, macros)` | Gramática restrita de macros, rejeição por struct e propagação a dependentes |
@@ -589,6 +589,9 @@ Todos seguem a assinatura handler de CommandSpec. `handle_info` avalia locals/ar
 class Repl:
     def run(self, context: CommandContext) -> int: ...
 
+class BatchPolicy:
+    timeout_seconds: float = 30.0
+
 class BatchRunner:
     def run(self, commands: Sequence[str], context: CommandContext,
             writer: TextIO) -> int: ...
@@ -596,9 +599,9 @@ class BatchRunner:
 
 Repl possui PromptSession, histórico e comando repetível. Entrada vazia repete somente comando permitido; reset/load exigem literal novo e permit de uso único. Ctrl-C é convertido em cancelamento durante execução e tratado no prompt. EOF/quit terminam o loop.
 
-Batch envia comandos sequencialmente, com origem batch, interrompe no primeiro erro e exige prazo finito de execução. Reset/load são recusados antes da emissão e também protegidos pela sessão. Política de clear em batch continua pendente, como em COMMANDS; não deve ser implicitamente convertido em efeito de terminal no JSON.
+Batch envia comandos sequencialmente, com origem batch, interrompe no primeiro erro e usa prazo global configurável por `--timeout`, em segundos positivos, com padrão de 30 segundos. Reset/load são recusados antes da emissão e também protegidos pela sessão. `clear` também é recusado com `command-not-available-in-batch`; nunca é convertido em efeito de terminal no JSON.
 
-O escopo de composição usa `try/finally` para Session.close tanto no REPL quanto no lote; runners não duplicam a responsabilidade de destruir a sessão. Relatório de limpeza vai para stderr e pode tornar o código de saída não zero.
+O escopo de composição usa `try/finally` para Session.close tanto no REPL quanto no lote; runners não duplicam a responsabilidade de destruir a sessão. Relatório de limpeza vai para stderr; qualquer erro, id pendente ou criação incerta transforma um código de sucesso em 1.
 
 ### 7.5 Renderizadores
 
@@ -612,7 +615,7 @@ class JsonRenderer:
     def encode(self, result: CommandResult, command_index: int) -> str: ...
 ```
 
-TextRenderer escapa strings de símbolos/fontes e aplica estilos. JsonRenderer faz mapeamento explícito versionado, sem serializar indiscriminadamente `__dict__` ou dataclasses internas. `encode` retorna um objeto JSON sem newline; BatchRunner acrescenta exatamente uma quebra. Endereços são inteiros, enums têm valores estáveis e bytes usam representação hexadecimal documentada por campo.
+TextRenderer escapa strings de símbolos/fontes e aplica estilos. JsonRenderer faz mapeamento explícito versionado, sem serializar indiscriminadamente `__dict__` ou dataclasses internas. `encode` retorna um objeto JSON sem newline; BatchRunner acrescenta exatamente uma quebra. O envelope v1 sempre contém `schema_version`, `command_index`, `command`, `ok`, `data`, `warnings` e `error`; sucesso usa `error: null`, falha usa `data: null`. Endereços são inteiros, enums têm valores estáveis e bytes usam hexadecimal minúsculo por campo.
 
 ## 8. Entrada e composição: `__main__.py`
 
@@ -624,7 +627,7 @@ def run_shell(options: ShellOptions) -> int: ...
 def run_exec(options: ExecOptions) -> int: ...
 ```
 
-O incremento offline implementa `main`, `build_argument_parser` e `run_resolve` somente para `resolve` e `--version`. Alvos: hexadecimal `0xADDR` e `arquivo:linha`, opcionalmente `image::`. Ids CLI são nomes dos diretórios de saída quando únicos, ou paths absolutos quando os nomes colidem. `--map` com múltiplos `--out` é recusado antes da carga. `run_shell`, `run_exec` e o manifesto permanecem pendentes. O texto de fonte vem do listing quando disponível; leitura de arquivos de fonte pertence ao próximo incremento de `SourceRepository`.
+`main`, `build_argument_parser` e `run_resolve` implementam `resolve`, `shell`, `exec` e `--version`. Alvos offline: hexadecimal `0xADDR` e `arquivo:linha`, opcionalmente `image::`. Ids CLI são nomes dos diretórios de saída quando únicos, ou paths absolutos quando os nomes colidem. `--map`/`--cdb` com múltiplos `--out` são recusados antes da carga. O manifesto permanece pendente. O texto de fonte vem do listing quando disponível; leitura de arquivos de fonte ainda depende da implementação de `SourceRepository`.
 
 `ResolveOptions`, `ShellOptions`, `ExecOptions` são configurações normalizadas do CLI. `resolve` constrói loader/projeto/fontes e renderiza sem instanciar transporte ou sessão. Restringe alvos à sintaxe offline documentada, mesmo que Project ofereça consultas mais amplas.
 
@@ -714,7 +717,7 @@ Não acoplar testes de Session às strings Tcl; usar FakeTarget. Testes de parse
 5. Implementar catálogo/expansão de macros, AST, calculadora hex/bin, decodificação e avaliador com contexto vivo opcional, sem dependência da UI.
 6. Integrar registro, handlers e renderizadores sobre os contratos anteriores.
 
-Permanecem pendentes de evidência: protocolo persistente, leitura em bloco, tipos CDB T, ABI de float e provas de frame. Permanecem pendentes de definição de interface externa: esquema final do manifesto, parâmetro/default de timeout de exec, política de clear em lote e configuração dedicada de fontes/include paths/flags para macros. Os contratos internos acima permitem avançar sem apresentar essas decisões como concluídas.
+Protocolo persistente e leitura em bloco foram validados no openMSX 21.0 e são habilitados somente após sondagem read-only, com fallback per-command/agregado. Permanecem pendentes de evidência: tipos CDB T adicionais, ABI de float e provas de frame. Permanecem pendentes de definição de interface externa: esquema final do manifesto e configuração dedicada de fontes/include paths/flags para macros. Timeout de exec e política de clear em lote já possuem contrato. As evidências da fase 6 estão em `PHASE6_VALIDATION.md`.
 
 Este documento deve ser atualizado quando um contrato público mudar, junto com os testes afetados. Novos métodos privados não exigem revisão do desenho; novas dependências entre camadas ou mudanças de semântica exigem.
 

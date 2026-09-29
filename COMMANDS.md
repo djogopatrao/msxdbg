@@ -94,7 +94,7 @@ msxdbg exec --project <FILE> -c <COMANDO> [-c <COMANDO> ...] --json
 ```text
 msxdbg exec --out <DIR> [--out <DIR> ...]
             [OPÇÕES_DE_SESSÃO]
-            -c <COMANDO> [-c <COMANDO> ...] --json
+            -c <COMANDO> [-c <COMANDO> ...] --json [--timeout SEGUNDOS]
 ```
 
 Usa os mesmos casos de uso da sessão interativa. As opções de sessão são as de conexão, fontes, assinatura, modo e tipos descritas para `shell`; a associação de artefatos segue as mesmas regras multi-imagem propostas.
@@ -107,8 +107,8 @@ msxdbg exec --out out -c 'break main.c:42' -c 'continue' -c 'info locals' --json
 - Emite um objeto JSON por comando executado, separado por newline, em stdout; diagnósticos adicionais vão para stderr.
 - Recusa `reset` e `load`, inclusive `reset yes` e `load yes`.
 - Remove os breakpoints próprios ao encerrar, com relato de eventual falha de limpeza.
-- Terá timeout finito configurável; nome da opção e valor padrão ainda não foram fixados.
-- Comandos de terminal como `clear` não possuem utilidade no lote; sua política de aceitação deve ser definida antes da implementação. Use comandos de depuração nos scripts.
+- `--timeout` define o prazo total do lote em segundos positivos; o padrão é 30 segundos. Ao expirar, o lote termina com erro operacional.
+- `clear` é recusado no lote com `command-not-available-in-batch`, sem efeito no terminal. `reset` e `load` recebem a mesma recusa, inclusive com confirmação literal.
 
 Envelope de exemplo:
 
@@ -117,6 +117,8 @@ Envelope de exemplo:
 ```
 
 Códigos de saída propostos: `0` para sucesso, `1` para falha operacional ou de resolução, `2` para uso inválido. Comandos não executados não geram envelopes de sucesso.
+
+O envelope JSON v1 contém sempre `schema_version`, `command_index`, `command`, `ok`, `data`, `warnings` e `error`. Em sucesso, `error` é `null`; em falha, `data` é `null`. Endereços e valores são números JSON, bytes são strings hexadecimais minúsculas e enums usam seus valores textuais estáveis. Campos internos nunca são serializados implicitamente. Erro ou pendência na limpeza transforma um status que seria 0 em 1.
 
 ### Versão
 
