@@ -47,12 +47,13 @@ class SessionServiceTests(unittest.TestCase):
         breakpoints = BreakpointManager(target)
         self.assertEqual((), breakpoints.records())
 
-    def test_safety_gate_does_not_issue_placeholder_permits(self) -> None:
+    def test_safety_gate_issues_single_use_permits(self) -> None:
         gate = SafetyGate()
         entry = InteractiveEntry("reset yes", True)
-
-        with self.assertRaises(NotImplementedError):
-            gate.authorize_typed(DangerousAction.RESET, entry)
+        permit = gate.authorize_typed(DangerousAction.RESET, entry)
+        gate.consume(permit, DangerousAction.RESET)
+        with self.assertRaises(Exception):
+            gate.consume(permit, DangerousAction.RESET)
 
 
 if __name__ == "__main__":

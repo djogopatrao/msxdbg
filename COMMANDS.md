@@ -79,7 +79,7 @@ Enquanto a assinatura não tiver sido observada, a parada é apresentada como po
 
 **Limitação legada:** overrides `--map`/`--cdb` são aplicados a todos os `--out`, e só o primeiro CDB de cada imagem é usado. **Proposta:** rejeitar overrides ambíguos com múltiplas imagens e usar associação explícita por manifesto.
 
-### Projeto explícito — proposta
+### Projeto explícito
 
 ```text
 msxdbg resolve --project <FILE> <ALVO>
@@ -87,7 +87,29 @@ msxdbg shell --project <FILE> [OPÇÕES_DE_SESSÃO]
 msxdbg exec --project <FILE> -c <COMANDO> [-c <COMANDO> ...] --json
 ```
 
-`--project` substitui a configuração por `--out` e aponta para um manifesto JSON versionado com imagens, seus ids, diretórios, maps e CDBs. Caminhos relativos são resolvidos em relação ao manifesto. O esquema exato e as regras de combinação de overrides ainda serão definidos; não há formato de manifesto estável para copiar neste momento.
+`--project` substitui a configuração por `--out` e aponta para um manifesto JSON
+versionado. O schema v1 é:
+
+```json
+{
+  "version": 1,
+  "images": [
+    {"id": "game", "out": "build/game",
+     "maps": ["build/game/game.map"],
+     "cdbs": ["build/game/main.cdb"]}
+  ],
+  "source_roots": ["src"],
+  "struct_headers": ["include/types.h"]
+}
+```
+
+`version` e `images` são obrigatórios. Cada imagem exige `id` e `out`; `maps` e
+`cdbs` são opcionais e, quando ausentes, usam descoberta dentro de `out`.
+`source_roots` e `struct_headers` são opcionais. Caminhos relativos são
+resolvidos em relação ao manifesto. Campos desconhecidos, ids duplicados e
+versões desconhecidas são erros. `--project` é mutuamente exclusivo com
+`--out`, `--map`, `--cdb`, `--source-root` e `--struct-header`; opções de sessão
+como `--socket`, `--mode` e `--verify-signature` continuam permitidas.
 
 ### `exec`: comandos para agentes — proposta
 
@@ -149,7 +171,7 @@ Os breakpoints continuam sendo por endereço. `dll::funcao` escolhe qual símbol
 
 | Sintaxe | Aliases | Efeito |
 | --- | --- | --- |
-| `break <ALVO>` | `b` | Cria breakpoint e informa número local e localização |
+| `break <ALVO> [if EXPRESSÃO]` | `b` | Cria breakpoint, opcionalmente condicionado, e informa número local e localização |
 | `delete <N>` | `d` | Remove o breakpoint N no emulador antes de removê-lo localmente |
 | `suspend <N>` | `disable` | Desativa N, preservando número e localização; operação idempotente |
 | `resume <N>` | `enable` | Reativa N no mesmo endereço e sob o mesmo número; operação idempotente |
@@ -158,19 +180,39 @@ Os breakpoints continuam sendo por endereço. `dll::funcao` escolhe qual símbol
 break _Map_GetTile
 b civ_font.c:603
 break 0x9975
+break _Map_GetTile if A == 3 && counter != 0
+break 0x8000 if A == 3 page 2 slot 3.2 segment 7
 info breakpoints
 disable 2
 enable 2
 delete 2
 ```
 
-`N` é o número local, não o identificador openMSX como `bp#3`. Números não são reutilizados na sessão. Não estão definidas formas para excluir todos, intervalos de números ou condições.
+`N` é o número local, não o identificador openMSX como `bp#3`. Números não são reutilizados na sessão. Não estão definidas formas para excluir todos ou intervalos de números. Condições aceitam somente números, registradores, símbolos MAP, globais/statics escalares tipados de 8/16 bits, parênteses, operadores aritméticos, bitwise, comparação e `&&`/`||`; Tcl é rejeitado antes da criação.
+
+Qualificadores opcionais `page N`, `slot P[.S]` e `segment N` são combinados
+com a condição no alvo. Sem `page`, o qualificador de slot usa a página do
+endereço. `segment` exige página explícita e capacidade de mapper observável;
+hardware sem essa evidência recebe erro antes da criação.
+
+### Watchpoints
+
+```text
+watch read ENDEREÇO TAMANHO
+watch write ENDEREÇO TAMANHO
+watch access ENDEREÇO TAMANHO
+```
+
+Endereço e tamanho são resolvidos e validados antes da mutação. `access` possui
+um número local, mas cria os pontos remotos read e write exigidos pelo openMSX.
+`delete`, `suspend` e `resume` usam o mesmo namespace local de breakpoints e
+watchpoints e operam sobre todos os IDs remotos pertencentes ao ponto.
 
 ## 5. Controle de execução
 
 | Sintaxe | Aliases | Efeito |
 | --- | --- | --- |
-| `continue` | `c` | Retoma execução e espera uma parada |
+| `continue` | `c` | Retoma execução e espera uma parada; aceita `--until-signature` quando assinatura e timeout finito estão configurados |
 | `step` | `s` | Em modo C, entra em chamadas até mudar de linha; em asm, executa um passo de instrução |
 | `next` | `n` | Como step, mas usa step-over para passar sobre chamadas |
 | `stepi` | `si` | Executa uma instrução com step-into e apresenta a parada em asm |
@@ -183,6 +225,7 @@ Esses comandos não aceitam contagem de passos. `until` exige alvo; não é a va
 ```text
 b main.c:42
 c
+continue --until-signature
 s
 n
 si
@@ -192,6 +235,12 @@ where
 ```
 
 O step por linha também termina em localização desconhecida, breakpoint ativo, interrupção ou limite de 20.000 iterações. Ctrl-C durante a espera solicita interrupção da execução.
+
+`continue --until-signature` é sempre explícito e exige assinatura configurada,
+timeout positivo finito e limite positivo de paradas. Retorna imediatamente se a
+assinatura já estiver verificada; caso contrário, continua após paradas com
+assinatura pendente até verificar, cancelar, expirar ou atingir o limite. Nunca
+executa reset/load e nunca altera o comportamento de `continue` sem a opção.
 
 **Diferença proposta:** `finish` aguardará parada confirmada; o legado reporta imediatamente após `step_out`. Inspeções na reescrita exigem estado parado conhecido. Cada nova parada seleciona novamente o frame 0.
 
@@ -342,7 +391,7 @@ atom      := register | number | identifier | call
 call      := identifier '(' [expr (',' expr)*] ')'
 ```
 
-Essa produção é esquemática: macros são reconhecidas/expandidas sobre tokens antes do parsing final; depois da expansão, só hex/bin permanecem como chamadas aceitas. Multiplicação, divisão e sinais mantêm as regras anteriores; não há chamada genérica de C. Tipos/operadores futuros de F06 são necessários quando o corpo da macro os usa.
+Essa produção é esquemática: macros são reconhecidas/expandidas sobre tokens antes do parsing final; depois da expansão, só hex/bin permanecem como chamadas aceitas. Multiplicação, divisão e sinais mantêm as regras anteriores; não há chamada genérica de C. Corpos de macro também podem produzir os operadores tipados descritos abaixo.
 
 Por exemplo, as definições de teste:
 
@@ -380,7 +429,7 @@ Os registradores de 8 bits derivados são calculados a partir dos pares. Nas exp
 | `i32` | `s32` | 4 | Inteiro com sinal |
 | `u64` | — | 8 | Inteiro sem sinal |
 | `i64` | `s64` | 8 | Inteiro com sinal |
-| `f32` | `float` | 4 | IEEE-754; a correspondência com o ABI SDCC Z80 ainda exige validação |
+| `f32` | `float` | 4 | IEEE-754 binary32 little-endian; validado com SDCC 4.6.0/Z80 |
 | `bool` | — | 1 | Booleano e byte bruto |
 | `char` | `c` | 1 | Caractere, decimal e hexadecimal; escape para não imprimíveis |
 | `c8` | — | 1 | Mesmo formato de caractere |
@@ -393,7 +442,7 @@ Valores multibyte usam little-endian. Structs dependem de layout conhecido; head
 
 Variáveis CDB escalares podem inferir tipo pelo tamanho e sinal. Ponteiros, arrays e structs não recebem um tipo padrão adivinhado em `print`; forneça um tipo. Variáveis em registradores têm confiabilidade limitada pela ausência de live ranges; struct em registradores é recusada. Valores otimizados ou sem localização demonstrável são apresentados como indisponíveis.
 
-### Expressões tipadas futuras
+### Expressões C tipadas
 
 | Forma | Intenção |
 | --- | --- |
@@ -403,7 +452,11 @@ Variáveis CDB escalares podem inferir tipo pelo tamanho e sinal. Ponteiros, arr
 | `s.f` | Consultar campo de struct |
 | `p->f` | Consultar campo por ponteiro |
 
-Essas formas dependem da segunda etapa do avaliador. Não devem ser tratadas como aceitas pelo legado. Casts C como `print (u16)expr` não foram escolhidos como sintaxe da primeira versão.
+Essas formas exigem tipo e localização comprovados. `&x` não lê memória;
+indexação de array verifica limites conhecidos e indexação por ponteiro verifica o
+espaço de endereços Z80. Campo desconhecido, layout incompleto, uso de `.`/`->`
+com tipo incompatível e armazenamento sem endereço produzem erro explícito.
+Casts C como `print (u16)expr` não fazem parte da sintaxe.
 
 ## 9. `info`: consultas do estado
 
@@ -434,6 +487,16 @@ info arguments
 O relatório `page3` depende de símbolos e limites de memória do programa. **Proposta:** regiões sem evidência aparecem como desconhecidas. Heap alcançando ou ultrapassando SP gera aviso de possível corrupção.
 
 ## 10. Modo, savestate e sessão
+
+### Escritas explícitas
+
+`write memory TARGET HEXBYTES` grava uma sequência de pares hexadecimais na
+ordem apresentada. Para escalares, use
+`write memory TARGET VALUE u8|u16|u32 [little|big]`; a ordem padrão é little
+endian. `write register NAME VALUE` grava um registrador ou metade suportada.
+As duas formas exigem alvo parado, invalidam o snapshot antes da emissão,
+releem o valor e só anunciam sucesso quando a verificação coincide. Timeout
+após emissão deixa o resultado incerto e nunca provoca repetição automática.
 
 | Sintaxe | Aliases | Efeito |
 | --- | --- | --- |
@@ -468,16 +531,17 @@ Os requisitos de evolução estão detalhados em [BACKLOG.md](BACKLOG.md), com p
 
 | Funcionalidade | Requisito | Situação |
 | --- | --- | --- |
-| Escrita de memória | F14 | Adiada; comando ainda a definir |
-| Escrita de registradores | F15 | Adiada; comando ainda a definir |
-| Watchpoints | F10 | Adiados; modos de acesso, faixa e comandos serão especificados |
-| Condições de breakpoint | F08 | Adiadas; predicados tipados, sem Tcl arbitrário |
-| Breakpoints por slot/mapper | F09 | Adiados; distintos da qualificação de nome por imagem |
-| Seleção de imagem pelo mapper ativo | F13 | Investigação; exige associação explícita de imagem e mapeamento |
-| `continue --until-signature` | F07 | Forma proposta; execução explícita com limites, fora do contrato inicial |
+| Escrita de memória | F14 | Implementada por `write memory` com verificação |
+| Escrita de registradores | F15 | Implementada por `write register` com verificação |
+| Watchpoints | F10 | Implementados para memória read/write/access com faixa validada |
+| Condições de breakpoint | F08 | Implementadas por gramática própria e tradução controlada, sem Tcl arbitrário |
+| Breakpoints por slot/mapper | F09 | Implementados com qualificadores explícitos page/slot/segment |
+| Seleção de imagem pelo mapper ativo | F13 | Implementada somente com associação explícita no manifesto |
+| `continue --until-signature` | F07 | Implementado na fase 9 com timeout global e limite de paradas |
 | Gerenciamento de mídia, boot ou velocidade | X01 | Excluído pelo escopo attach-only |
 | Inicialização ou encerramento do emulador | X02 | Excluído; o debugger conecta a um processo existente |
 
 Gerenciamento de mídia e ciclo de vida do emulador são restrições de escopo, não funcionalidades apenas adiadas. Reset/load mantêm as confirmações humanas documentadas e não podem ser automatizados.
 
-A especificação introdutória menciona 25 comandos, mas sua tabela enumera 24 comandos principais. Esta referência cobre os 24 efetivamente enumerados e todos os seus aliases, sem inventar um comando adicional.
+A reescrita possui 26 comandos registrados, incluindo `watch` e `write`, além
+dos comandos do núcleo e seus aliases.

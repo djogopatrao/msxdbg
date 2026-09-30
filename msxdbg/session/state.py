@@ -8,7 +8,7 @@ from typing import Dict, Optional, Protocol, TYPE_CHECKING, Tuple
 
 from msxdbg.debuginfo.index import SymbolContext
 from msxdbg.debuginfo.model import CodeLocation, FunctionId, Resolution, Variable
-from msxdbg.target.api import RegisterSet
+from msxdbg.target.api import PageState, RegisterSet
 
 if TYPE_CHECKING:
     from .frames import Frame
@@ -48,6 +48,11 @@ class SessionConfig:
     step_limit: int = 20000
     frame_limit: int = 64
     execution_timeout: Optional[float] = None
+    signature_attempt_limit: int = 256
+
+    def __post_init__(self) -> None:
+        if self.signature_attempt_limit < 1:
+            raise ValueError("signature attempt limit must be positive")
 
 
 @dataclass(frozen=True)
@@ -58,6 +63,10 @@ class StopSnapshot:
     pc_resolution: Resolution[CodeLocation]
     signature_status: str
     known_reason: Optional[str] = None
+    pages: Tuple[PageState, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "pages", tuple(self.pages))
 
 
 @dataclass
@@ -81,6 +90,8 @@ class InspectionContext(Protocol):
     def frame(self) -> "Frame": ...
     @property
     def registers(self) -> RegisterSet: ...
+    @property
+    def signature_status(self) -> str: ...
     @property
     def symbol_context(self) -> SymbolContext: ...
     def read_memory(self, address: int, size: int) -> bytes: ...

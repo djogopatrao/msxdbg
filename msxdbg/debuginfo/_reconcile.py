@@ -10,6 +10,9 @@ from .model import (AbsoluteStorage, AddressRange, Area, BlockScope, CodeLocatio
                     StackStorage, Symbol, UnknownStorage, Variable, VariableId)
 
 
+CODE_AREAS = frozenset(("_CODE", "_HOME", "_GSINIT", "_GSFINAL"))
+
+
 def _module_key(raw):
     path = Path(raw)
     return path.stem if path.suffix in ('.o', '.rel') else raw
@@ -43,10 +46,10 @@ def reconcile(image_id, maps, listings, cdbs, diagnostics):
         listing_records[data.module_name] = data
         module_id = ModuleId(image_id, data.module_name)
         exports = {x.name for x in data.globals}
-        candidate_bases = defaultdict(set)
-        evidence = []
+        candidate_bases = defaultdict(lambda: defaultdict(set))
+        area_evidence = defaultdict(list)
         for label in data.labels:
-            if label.area != '_CODE' or label.name not in exports:
+            if label.area not in CODE_AREAS or label.name not in exports:
                 continue
             matches = [s for s in symbols if s.name == label.name
                        and s.module in (None, module_id)]
@@ -60,62 +63,82 @@ def reconcile(image_id, maps, listings, cdbs, diagnostics):
             if not 0 <= base <= 0xFFFF:
                 warn('load.invalid-base', 'module base would lie outside the CPU space', label.origin)
                 continue
-            candidate_bases[label.name].add(base)
-            evidence.extend((label.origin, *(s.origin for s in matches)))
-        votes = {name: next(iter(values)) for name, values in candidate_bases.items() if len(values) == 1}
-        if any(len(values) > 1 for values in candidate_bases.values()):
-            warn('load.label-conflict', 'duplicate label has inconsistent offsets', *evidence)
-        counts = Counter(votes.values())
-        base = None
-        if counts:
-            best = max(counts.values())
-            winners = [candidate for candidate, count in counts.items() if count == best]
-            if len(winners) == 1:
-                base = winners[0]
-            if len(counts) > 1:
-                warn('load.base-conflict' if base is not None else 'load.base-tie',
-                     f'base candidates for {data.module_name}: {dict(counts)}', *evidence)
-        if base is None:
-            warn('load.unresolved-base', 'no unique _CODE base for ' + data.module_name, *evidence)
-        offsets = [x.offset for x in data.lines if x.area == '_CODE']
-        limit = min(0x10000, base + max(offsets) + 17) if base is not None and offsets else None
-        if limit is not None:
-            warn('load.estimated-limit', 'LST extent uses last known offset + 16 bytes for ' + data.module_name,
-                 *evidence)
-        areas = tuple(Area(a.name, base if a.name == '_CODE' else None,
-                           limit if a.name == '_CODE' else None,
-                           tuple(evidence) + a.evidence if a.name == '_CODE' else a.evidence,
-                           'lst-fallback' if a.name == '_CODE' and limit is not None else None)
-                      for a in data.areas)
+            candidate_bases[label.area][label.name].add(base)
+            area_evidence[label.area].extend((label.origin, *(s.origin for s in matches)))
+        selected_bases = {}
+        for area_name in CODE_AREAS:
+            candidates = candidate_bases[area_name]
+            evidence = area_evidence[area_name]
+            votes = {name: next(iter(values)) for name, values in candidates.items()
+                     if len(values) == 1}
+            if any(len(values) > 1 for values in candidates.values()):
+                warn('load.label-conflict',
+                     f'duplicate label has inconsistent offsets in {area_name}', *evidence)
+            counts = Counter(votes.values())
+            base = None
+            if counts:
+                best = max(counts.values())
+                winners = [candidate for candidate, count in counts.items() if count == best]
+                if len(winners) == 1:
+                    base = winners[0]
+                if len(counts) > 1:
+                    warn('load.base-conflict' if base is not None else 'load.base-tie',
+                         f'base candidates for {data.module_name}/{area_name}: {dict(counts)}',
+                         *evidence)
+            if base is not None:
+                selected_bases[area_name] = base
+            elif any(a.name == area_name for a in data.areas):
+                warn('load.unresolved-base',
+                     f'no unique {area_name} base for {data.module_name}', *evidence)
+        areas = []
+        for area in data.areas:
+            base = selected_bases.get(area.name)
+            offsets = [x.offset for x in data.lines if x.area == area.name]
+            limit = (min(0x10000, base + max(offsets) + 17)
+                     if base is not None and offsets else None)
+            evidence = tuple(area_evidence[area.name])
+            if limit is not None:
+                warn('load.estimated-limit',
+                     f'LST extent uses last known offset + 16 bytes for {data.module_name}/{area.name}',
+                     *evidence)
+            areas.append(Area(area.name, base, limit,
+                              evidence + area.evidence if base is not None else area.evidence,
+                              'lst-fallback' if limit is not None else None))
+        areas = tuple(areas)
         labels = []
         locations = []
-        if base is not None:
+        if selected_bases:
             for label in data.labels:
-                if label.area == '_CODE' and base + label.offset <= 0xFFFF:
+                base = selected_bases.get(label.area)
+                if base is not None and base + label.offset <= 0xFFFF:
                     labels.append(Symbol(label.name, base + label.offset, module_id, label.origin))
             for line in data.lines:
-                if line.area != '_CODE':
+                base = selected_bases.get(line.area)
+                if base is None:
                     continue
                 if base + line.offset > 0xFFFF:
                     warn('load.address-overflow', 'relocated listing offset exceeds CPU space', line.origin)
                     continue
-                locations.append(CodeLocation(image_id, base + line.offset, module_id, '_CODE',
+                locations.append(CodeLocation(image_id, base + line.offset, module_id, line.area,
                                               line.offset, line.source, evidence=(line.origin,)))
         modules[module_id] = Module(module_id, data.module_name, areas, tuple(labels),
             tuple(x for x in labels if x.name in exports),
             tuple(x.source for x in locations if x.source), tuple(locations))
 
     # Each distinct later base ends the preceding module's fallback extent.
-    bases = sorted({a.base for m in modules.values() for a in m.areas if a.name == '_CODE' and a.base is not None})
     for id_, module in list(modules.items()):
         areas = []
         for area in module.areas:
+            bases = sorted({a.base for m in modules.values() for a in m.areas
+                            if a.name == area.name and a.base is not None})
             later = [b for b in bases if area.base is not None and b > area.base]
             if area.limit is not None and later:
                 area = replace(area, limit=min(area.limit, later[0]))
             areas.append(area)
-        code = next((a for a in areas if a.name == '_CODE'), None)
-        locations = tuple(x for x in module.locations if code and code.limit is not None and x.address < code.limit)
+        by_name = {a.name: a for a in areas}
+        locations = tuple(x for x in module.locations
+                          if x.area in by_name and by_name[x.area].limit is not None
+                          and x.address < by_name[x.area].limit)
         if len(locations) != len(module.locations):
             warn('load.listing-overlap', 'listing locations cross the next module base')
         modules[id_] = replace(module, areas=tuple(areas), locations=locations)
@@ -195,10 +218,12 @@ def reconcile(image_id, maps, listings, cdbs, diagnostics):
         check_map_link(raw, entry)
         exit_ = linked('X' + raw.identity.raw)
         listing = listing_records.get(module.key)
-        if listing and any(label.name in (raw.identity.name, '_' + raw.identity.name)
-                           and label.area != '_CODE' for label in listing.labels):
+        listing_label = next((label for label in listing.labels
+                              if label.name in (raw.identity.name, '_' + raw.identity.name)), None) if listing else None
+        function_area = listing_label.area if listing_label else '_CODE'
+        if function_area not in CODE_AREAS:
             unsupported_ranges.append(AddressRange(entry, exit_ + 1 if exit_ is not None and exit_ >= entry else entry + 1))
-            warn('load.unsupported-area', 'function is outside _CODE', raw.origin)
+            warn('load.unsupported-area', f'function is in non-code area {function_area}', raw.origin)
             continue
         end = exit_ + 1 if exit_ is not None and exit_ >= entry else None
         if exit_ is not None and exit_ < entry:
@@ -237,8 +262,12 @@ def reconcile(image_id, maps, listings, cdbs, diagnostics):
             key = (raw.level, raw.sublevel, raw.block)
             scopes.setdefault(key, []).append(raw.address)
             module = modules[function.id.module]
-            base = next((a.base for a in module.areas if a.name == '_CODE' and a.base is not None), function.entry)
-            locations.append(CodeLocation(image_id, raw.address, function.id.module, '_CODE',
+            listing = listing_records.get(function.id.module.key)
+            label = next((x for x in listing.labels
+                          if x.name in (function.name, '_' + function.name)), None) if listing else None
+            area_name = label.area if label and label.area in CODE_AREAS else '_CODE'
+            base = next((a.base for a in module.areas if a.name == area_name and a.base is not None), function.entry)
+            locations.append(CodeLocation(image_id, raw.address, function.id.module, area_name,
                 raw.address - base, raw.source, function.id, (raw.origin,)))
             for old in module.locations:
                 if old.address == raw.address and old.source and (
@@ -299,11 +328,11 @@ def reconcile(image_id, maps, listings, cdbs, diagnostics):
         if matches:
             image_locations.extend(matches)
             continue
-        owners = [(m, a) for m in modules.values() for a in m.areas if a.name == '_CODE'
+        owners = [(m, a) for m in modules.values() for a in m.areas if a.name in CODE_AREAS
                   and a.base is not None and a.limit is not None and a.base <= raw.address < a.limit]
         if len(owners) == 1:
             module, area = owners[0]
-            image_locations.append(CodeLocation(image_id, raw.address, module.id, '_CODE',
+            image_locations.append(CodeLocation(image_id, raw.address, module.id, area.name,
                 raw.address - area.base, raw.source, evidence=(raw.origin,) + area.evidence))
         else:
             image_locations.append(CodeLocation(image_id, raw.address, area='_CODE',

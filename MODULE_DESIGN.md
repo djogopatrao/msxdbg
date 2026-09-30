@@ -143,13 +143,13 @@ def read_project_spec(path: Path) -> ProjectSpec: ...
 
 `ImageArtifacts` contém paths descobertos por espécie; `LoadedProject` contém `project: Project`, `sources: SourceRepository`, `macros: MacroCatalog` e diagnósticos. `None` em maps/cdbs significa descoberta; tupla explícita substitui descoberta. Ids duplicados e overrides sem imagem definida falham antes do parsing.
 
-O loader abre arquivos, chama parsers, reconcilia bases e CDBs, resolve tipos e cria índices. Conflitos majoritários de base são preservados; empate sem evidência suficiente não escolhe uma base arbitrária. O manifesto externo continua pendente de esquema final; `ProjectSpec` estabiliza o contrato interno sem antecipar opções de CLI.
+O loader abre arquivos, chama parsers, reconcilia bases e CDBs, resolve tipos e cria índices. Conflitos majoritários de base são preservados; empate sem evidência suficiente não escolhe uma base arbitrária. O manifesto externo usa o schema JSON v1 documentado em COMMANDS; `ProjectSpec` estabiliza o contrato interno após validação e resolução dos paths.
 
 Implementação atual: descoberta recursiva determinística sem seguir diretórios simbólicos; overrides `maps`/`cdbs` são paths fornecidos pelo chamador, e tuplas vazias desativam a descoberta daquela espécie. Cada imagem exige ao menos um MAP com símbolos utilizáveis. Artefatos descobertos/explicitados que não podem ser lidos falham com `ProjectLoadError`; registros inválidos continuam como diagnósticos dos parsers. CDB e LST ausentes permitem consultas MAP, sem inventar linhas ou funções.
 
 A reconciliação privada em `_reconcile.py` reúne todos os CDBs da imagem, conserva conflitos e filtra `sloc`. Bases `_CODE` usam um voto por export; empate fica desconhecido. O limite LST `último offset + 16` é inclusivo e identificado como `lst-fallback`; a próxima base o limita. Fim CDB inclusivo é convertido para exclusivo; na ausência de exit, usa-se próxima entrada ou limites `s__CODE`/`l__CODE` comprovados. Sem essas provas, a última função só resolve nos endereços conhecidos, sem intervalo infinito. Linhas CDB válidas prevalecem sobre LST, com diagnóstico em divergências.
 
-`_types.py` resolve primitivos Z80, ponteiros de dois bytes, arrays e o subconjunto packed de T demonstrado nos testes. Referências por ponteiro podem ser recursivas; composição por valor recursiva, sobreposição, padding não demonstrado e dependências inválidas ficam indisponíveis. Tipos e variáveis carregam evidências. O suporte a headers e macros não está implementado neste incremento: `struct_headers` gera `load.headers-unavailable` e a carga de código continua; `MacroCatalog` é entregue vazio. D12 permanece parcial quanto a esses serviços. `SourceRepository` também conserva seu contrato de stub.
+`_types.py` resolve primitivos Z80, ponteiros de dois bytes, arrays e o subconjunto packed de T demonstrado nos testes. Referências por ponteiro podem ser recursivas; composição por valor recursiva, sobreposição, padding não demonstrado e dependências inválidas ficam indisponíveis. Tipos e variáveis carregam evidências. Headers explicitamente fornecidos oferecem o fallback packed documentado e macros com origem; tipos CDB utilizáveis têm precedência. `SourceRepository` localiza e mantém cache observável independente das paradas.
 
 ### 3.5 `debuginfo/index.py`
 
@@ -627,7 +627,7 @@ def run_shell(options: ShellOptions) -> int: ...
 def run_exec(options: ExecOptions) -> int: ...
 ```
 
-`main`, `build_argument_parser` e `run_resolve` implementam `resolve`, `shell`, `exec` e `--version`. Alvos offline: hexadecimal `0xADDR` e `arquivo:linha`, opcionalmente `image::`. Ids CLI são nomes dos diretórios de saída quando únicos, ou paths absolutos quando os nomes colidem. `--map`/`--cdb` com múltiplos `--out` são recusados antes da carga. O manifesto permanece pendente. O texto de fonte vem do listing quando disponível; leitura de arquivos de fonte ainda depende da implementação de `SourceRepository`.
+`main`, `build_argument_parser` e `run_resolve` implementam `resolve`, `shell`, `exec` e `--version`. Alvos offline: hexadecimal `0xADDR` e `arquivo:linha`, opcionalmente `image::`. Ids CLI são nomes dos diretórios de saída quando únicos, ou paths absolutos quando os nomes colidem. `--map`/`--cdb` com múltiplos `--out` são recusados antes da carga. O manifesto `--project` v1 é validado antes de qualquer conexão. O texto de fonte vem do arquivo localizado por `SourceRepository`, com fallback do listing quando indisponível.
 
 `ResolveOptions`, `ShellOptions`, `ExecOptions` são configurações normalizadas do CLI. `resolve` constrói loader/projeto/fontes e renderiza sem instanciar transporte ou sessão. Restringe alvos à sintaxe offline documentada, mesmo que Project ofereça consultas mais amplas.
 
@@ -737,7 +737,7 @@ A sintaxe e as assinaturas dessas extensões devem ser detalhadas ao promover ca
 
 ## 13. Contratos adicionais: calculadora e macros (F17/F18)
 
-Esta seção refina §§6–7: o pipeline passa a ser tokens → expansão de macros → AST → avaliação de valor ou leitura explícita. Não há código implementado. A seleção de modo segue COMMANDS §8; ela substitui a convenção anterior de parênteses externos sem tipo como indirection.
+Esta seção refina §§6–7: o pipeline implementado é tokens → expansão de macros → AST → avaliação de valor ou leitura explícita. A seleção de modo segue COMMANDS §8; ela substitui a convenção anterior de parênteses externos sem tipo como indirection.
 
 ### `debuginfo/macros.py`: definições offline
 
@@ -767,7 +767,7 @@ class MacroExpander:
 
 ### AST, avaliação e resultados
 
-O contrato consolidado de §6 inclui `BuiltinCall(name, arguments)` à AST para hex/bin; chamadas de macros desaparecem na expansão, outras chamadas são rejeitadas. `PrintRequest` tem `mode` explícito (calculate, read-memory, inspect-variable), determinado após expansão. A UI separa o tipo externo, mas não tenta dividir argumentos de macro por espaços.
+O contrato consolidado de §6 inclui `BuiltinCall(name, arguments)` para hex/bin e `AddressOf`, `Dereference`, `Index` e `Member` para expressões C tipadas; chamadas de macros desaparecem na expansão, outras chamadas são rejeitadas. `PrintRequest` tem `mode` explícito (calculate, read-memory, inspect-variable), determinado após expansão. A UI separa o tipo externo, mas não tenta dividir argumentos de macro por espaços.
 
 ```python
 class EvaluationRequirements:

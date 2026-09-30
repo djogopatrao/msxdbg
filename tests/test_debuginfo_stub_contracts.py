@@ -59,15 +59,11 @@ class ParserContractTests(unittest.TestCase):
         self.assertIsInstance(result.value, CdbData)
         self.assertEqual((), result.diagnostics)
 
-    def test_remaining_parsers_fail_explicitly(self) -> None:
-        origin = Path("input")
-        calls = (lambda: parse_headers([HeaderInput(origin, "")]),)
-        for call in calls:
-            with self.subTest(call=call):
-                with self.assertRaises(NotImplementedError):
-                    call()
+    def test_header_parser_returns_an_empty_result_for_empty_input(self) -> None:
+        result = parse_headers([HeaderInput(Path("input"), "")])
+        self.assertEqual((), result.value.types)
+        self.assertEqual((), result.diagnostics)
 
-    def test_services_fail_explicitly(self) -> None:
-        with self.assertRaises(NotImplementedError):
-            SourceRepository().invalidate()
+    def test_services_have_safe_empty_behavior(self) -> None:
+        SourceRepository().invalidate()
         self.assertEqual((), MacroCatalog().names(MacroContext()))

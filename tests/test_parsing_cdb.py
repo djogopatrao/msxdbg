@@ -11,6 +11,7 @@ from msxdbg.debuginfo.diagnostics import ParseResult
 
 ORIGIN = Path('build/demo.cdb')
 FIXTURE = Path(__file__).parent / 'fixtures' / 'cdb' / 'scoped.cdb'
+REAL_TYPES = Path(__file__).parent / 'fixtures' / 'cdb' / 'msxciv_sdcc_4_6_types.cdb'
 
 
 def parse(*rows):
@@ -125,6 +126,23 @@ def test_type_members_preserve_offsets_arrays_and_forward_self_reference():
     assert type_.fields[0].symbol.origin.line == 14
     assert result.value.symbols[0].identity.scope != 'S'
     assert parse('T:Fdemo$Empty[]').value.types[0].fields == ()
+
+
+def test_real_sdcc_4_6_type_extract_catalogs_supported_and_rejected_encodings():
+    result = parse_cdb(REAL_TYPES.read_text().splitlines(), REAL_TYPES)
+    assert [(item.code, item.origins[0].line) for item in result.diagnostics] == [
+        ('cdb.unsupported-type', 5),  # bitfield layout is not demonstrated
+    ]
+    assert [item.name for item in result.value.types] == [
+        'VectorU8', 'DOS_FCB', '__00000187', 'RuntimeWorldCell', 'Clickable',
+    ]
+    assert result.value.types[1].fields[1].symbol.type_chain.raw == 'DA11d,SC:U'
+    nested = result.value.types[3]
+    assert nested.fields[3].symbol.type_chain.raw == 'ST__00000187:S'
+    assert result.value.types[4].fields[-1].symbol.type_chain.raw == 'DC,DF,SV:S'
+    grid, pointer = result.value.symbols
+    assert grid.type_chain.raw == 'DA14d,DA14d,STRuntimeWorldCell:S'
+    assert pointer.type_chain.raw == 'DG,STMouse_State:S'
 
 
 def test_unknown_or_truncated_type_is_diagnostic_not_partial_success():

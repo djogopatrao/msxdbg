@@ -6,7 +6,7 @@ import re
 from typing import Tuple
 
 from .api import (
-    ExecutionStatus, Instruction, PageState, RegisterSet, RemoteBreakpoint,
+    ExecutionStatus, Instruction, PageState, RegisterSet, RemoteBreakpoint, RemoteWatchpoint,
     TargetCapabilities, TargetCommandError, TargetError, TargetProtocolError,
 )
 from .transport import OpenMSXTransport
@@ -84,6 +84,52 @@ class OpenMSXTarget:
             raise self._invalid("read_memory", "openMSX returned truncated memory")
         return bytes.fromhex(encoded)
 
+    def write_memory(self, address: int, data: bytes) -> None:
+        data = bytes(data)
+        _memory_range(address, len(data))
+        if self._capabilities.memory_write is False:
+            raise TargetCommandError("memory writes are unsupported", "write_memory")
+        if not data:
+            return
+        commands = "; ".join(
+            f"debug write memory {address + offset} {value}"
+            for offset, value in enumerate(data)
+        )
+        self._request("write_memory", commands, mutation=True)
+
+    def write_register(self, name: str, value: int) -> None:
+        if self._capabilities.register_write is False:
+            raise TargetCommandError("register writes are unsupported", "write_register")
+        key = name.upper()
+        key = {"AF2": "AF'", "BC2": "BC'", "DE2": "DE'", "HL2": "HL'"}.get(key, key)
+        aliases = dict(_REGISTERS)
+        halves = {
+            "A": ("AF", True), "F": ("AF", False),
+            "B": ("BC", True), "C": ("BC", False),
+            "D": ("DE", True), "E": ("DE", False),
+            "H": ("HL", True), "L": ("HL", False),
+            "IXH": ("IX", True), "IXL": ("IX", False),
+            "IYH": ("IY", True), "IYL": ("IY", False),
+            "PCH": ("PC", True), "PCL": ("PC", False),
+            "SPH": ("SP", True), "SPL": ("SP", False),
+            "A2": ("AF'", True), "F2": ("AF'", False),
+            "B2": ("BC'", True), "C2": ("BC'", False),
+            "D2": ("DE'", True), "E2": ("DE'", False),
+            "H2": ("HL'", True), "L2": ("HL'", False),
+        }
+        if key not in aliases and key not in halves:
+            raise ValueError(f"unknown or non-writable register: {name}")
+        width = 8 if key in halves or key not in _WORD_REGISTERS else 16
+        if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value < (1 << width):
+            raise ValueError("register value is outside its width")
+        if key in halves:
+            pair, high = halves[key]
+            current = self.read_registers().get(pair)
+            value = ((value << 8) | (current & 0xff)) if high else ((current & 0xff00) | value)
+            key = pair
+        remote = aliases[key]
+        self._request("write_register", f"reg {remote} {value}", mutation=True)
+
     def disassemble(self, address: int, count: int) -> Tuple[Instruction, ...]:
         if not 0 <= address <= 0xFFFF or count < 1 or address + count > 0x10000:
             raise ValueError("invalid disassembly range")
@@ -156,11 +202,15 @@ class OpenMSXTarget:
     def interrupt(self) -> None:
         self._command("interrupt", "debug break")
 
-    def create_breakpoint(self, address: int) -> str:
+    def create_breakpoint(self, address: int, condition: str = "") -> str:
         _address(address)
+        if condition and self._capabilities.conditional_breakpoints is False:
+            raise TargetCommandError("conditional breakpoints are unsupported",
+                                     "create_breakpoint")
+        suffix = "" if not condition else " -condition " + _tcl_expression(condition)
         remote_id = self._request(
             "create_breakpoint",
-            f"debug breakpoint create -address {address}",
+            f"debug breakpoint create -address {address}{suffix}",
             mutation=True,
         ).strip()
         if not remote_id or any(character.isspace() for character in remote_id):
@@ -193,6 +243,46 @@ class OpenMSXTarget:
             except ValueError as error:
                 raise self._invalid("list_breakpoints", str(error)) from error
         return tuple(breakpoints)
+
+    def create_watchpoint(self, access: str, start: int, end: int,
+                          condition: str = "") -> str:
+        if self._capabilities.watchpoints is False:
+            raise TargetCommandError("memory watchpoints are unsupported",
+                                     "create_watchpoint")
+        if access not in ("read", "write"):
+            raise ValueError("watchpoint access must be read or write")
+        _memory_range(start, end - start + 1)
+        address = str(start) if start == end else f"{{{start} {end}}}"
+        suffix = "" if not condition else " -condition " + _tcl_expression(condition)
+        result = self._request("create_watchpoint",
+            f"debug watchpoint create -type {access}_mem -address {address}{suffix}",
+            mutation=True).strip()
+        if not result or any(character.isspace() for character in result):
+            raise self._invalid("create_watchpoint", "invalid watchpoint id")
+        return result
+
+    def remove_watchpoint(self, remote_id: str) -> None:
+        if not remote_id: raise ValueError("watchpoint id must not be empty")
+        self._command("remove_watchpoint",
+                      "debug watchpoint remove " + _tcl_word(remote_id))
+
+    def list_watchpoints(self) -> Tuple[RemoteWatchpoint, ...]:
+        command = ("set result {}; dict for {id properties} [debug watchpoint list] {"
+                   "append result $id { } [dict get $properties -type] { } "
+                   "[dict get $properties -address] \\n}; set result")
+        text = self._request("list_watchpoints", command)
+        result = []
+        for line in text.splitlines():
+            fields = line.split()
+            if len(fields) not in (3, 4):
+                raise self._invalid("list_watchpoints", "malformed watchpoint list")
+            remote_id, type_, *addresses = fields
+            if type_ not in ("read_mem", "write_mem"):
+                continue
+            values = [self._integer(item, "list_watchpoints") for item in addresses]
+            start, end = (values[0], values[0]) if len(values) == 1 else values
+            result.append(RemoteWatchpoint(remote_id, type_.split("_", 1)[0], start, end))
+        return tuple(result)
 
     def reset(self) -> None:
         self._command("reset", "reset")
@@ -279,6 +369,12 @@ def _tcl_word(value: str) -> str:
                     .replace("\r", "\\r")
                     .replace("\t", "\\t"))
     return f'"{escaped}"'
+
+
+def _tcl_expression(value: str) -> str:
+    if not value or any(character in value for character in "{};\n\r"):
+        raise ValueError("invalid generated Tcl expression")
+    return "{" + value + "}"
 
 
 __all__ = ["OpenMSXTarget"]

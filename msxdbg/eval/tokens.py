@@ -29,10 +29,10 @@ def tokenize(text: str) -> Tuple[Token, ...]:
             index += 1
             continue
         start = index
-        if text.startswith(("<<", ">>"), index):
+        if text.startswith(("<<", ">>", "->"), index):
             index += 2
             tokens.append(Token("operator", text[start:index], start, index))
-        elif char in single:
+        elif char in single or char == ".":
             index += 1
             kind = "operator" if char in "+-*/%&|^~" else "punctuation"
             tokens.append(Token(kind, char, start, index))

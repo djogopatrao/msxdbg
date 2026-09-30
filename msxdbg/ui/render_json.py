@@ -1,13 +1,17 @@
 """Stable JSON envelopes for command results."""
 from __future__ import annotations
 import json
-from msxdbg.eval.values import ArrayValue, ScalarValue, StringValue, StructValue, ValueResult, VariableRow
+from msxdbg.eval.values import AddressValue, ArrayValue, ScalarValue, StringValue, StructValue, ValueResult, VariableRow
+from msxdbg.session.memory_map import Page3Report
 from .results import (BreakpointPayload, BreakpointTable, CommandResult,
     DisassemblyPayload, FrameTable, HelpPayload, MessagePayload, PageTable,
     RegisterTable, SourcePayload, StopPayload, SymbolPayload, UiAction)
 
 def _decoded(value):
     if value is None: return None
+    if isinstance(value, AddressValue):
+        return {"kind":"address","address":value.address,
+                "referenced_type":None if value.referenced_type is None else value.referenced_type.record_identity}
     if isinstance(value, ScalarValue):
         return {"kind":"scalar","value":value.value,"type":value.type_id.record_identity,"raw_bytes":value.raw_bytes.hex()}
     if isinstance(value, StringValue):
@@ -52,6 +56,13 @@ def _breakpoint(record):
     if record is None: return None
     return {"number":record.number,"address":record.address,
             "status":record.status,"remote_id":record.remote_id,
+            "condition":record.condition,
+            "point_kind":record.kind,"access":record.access,"size":record.size,
+            "remote_ids":list(record.remote_ids),
+            "qualifier":None if record.qualifier is None else {
+                "page":record.qualifier.page,"primary_slot":record.qualifier.primary_slot,
+                "secondary_slot":record.qualifier.secondary_slot,
+                "segment":record.qualifier.segment},
             "location":None if record.location is None else {
                 "image":record.location.image.value,
                 "module":record.location.module.key if record.location.module else None,
@@ -86,6 +97,11 @@ def _payload(payload):
         return {"pages":[{"page":item.page,"primary_slot":item.primary_slot,
                 "secondary_slot":item.secondary_slot,"segment":item.segment}
                 for item in payload.pages]}
+    if isinstance(payload, Page3Report):
+        return {"regions":[{"name":item.name,"start":item.start,"end":item.end,
+                            "unavailable_reason":item.unavailable_reason}
+                           for item in payload.regions],
+                "free_size":payload.free_size,"warnings":list(payload.warnings)}
     if isinstance(payload, SymbolPayload):
         return {"status":payload.resolution.status,"candidates":[{
             "name":item.symbol.name,"address":item.symbol.address,

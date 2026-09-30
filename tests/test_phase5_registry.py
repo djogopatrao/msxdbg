@@ -4,8 +4,8 @@ import pytest
 
 from msxdbg.debuginfo.model import ImageId
 from msxdbg.ui.commands import (
-    BreakpointNumberArguments, ConfirmationArguments, DisassembleArguments,
-    ListArguments, ModeArguments, NoArguments, TargetArguments, build_registry,
+    BreakArguments, BreakpointNumberArguments, ConfirmationArguments, ContinueArguments,
+    DisassembleArguments, ListArguments, ModeArguments, NoArguments, TargetArguments, build_registry,
     parse_target,
 )
 
@@ -30,9 +30,11 @@ def test_parse_target_rejects_invalid_or_expression_forms(value):
 
 def test_registry_parsers_produce_typed_arguments():
     registry = build_registry()
-    assert registry.lookup("break").parser("main")==TargetArguments(parse_target("main"))
+    assert registry.lookup("break").parser("main")==BreakArguments(parse_target("main"))
+    assert registry.lookup("break").parser("main if A == 1")==BreakArguments(parse_target("main"), "A == 1")
     assert registry.lookup("delete").parser("2")==BreakpointNumberArguments(2)
-    assert registry.lookup("continue").parser("")==NoArguments()
+    assert registry.lookup("continue").parser("")==ContinueArguments()
+    assert registry.lookup("continue").parser("--until-signature")==ContinueArguments(True)
     assert registry.lookup("list").parser("next")==ListArguments(navigation="next")
     assert registry.lookup("list").parser("main.c:42")==ListArguments(path="main.c",line=42)
     assert registry.lookup("disas").parser("main 20")==DisassembleArguments(

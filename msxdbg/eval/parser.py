@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
-from .ast import Binary, BuiltinCall, Expr, Group, Index, Indirect, Name, Number, Unary
+from .ast import (AddressOf, Binary, BuiltinCall, Dereference, Expr, Group,
+                  Index, Indirect, Member, Name, Number, Unary)
 from .macros import ExpandedTokens
 from .tokens import ExpressionSyntaxError, Token, tokenize
 
@@ -70,8 +71,12 @@ class ExpressionParser:
         if token is None:
             position = self._tokens[-1].end if self._tokens else 0
             raise ExpressionSyntaxError("expected expression", position, position)
-        if token.lexeme in ("+", "-", "~"):
-            self._take(); return Unary(token.lexeme, self._parse_prefix())
+        if token.lexeme in ("+", "-", "~", "*", "&"):
+            self._take()
+            operand = self._parse_prefix()
+            if token.lexeme == "*": return Dereference(operand)
+            if token.lexeme == "&": return AddressOf(operand)
+            return Unary(token.lexeme, operand)
         if token.lexeme == "(":
             self._take(); expression = Group(self._parse_binary(0)); self._expect(")")
         elif token.lexeme == "[":
@@ -93,8 +98,16 @@ class ExpressionParser:
                 expression = Name(token.lexeme)
         else:
             raise ExpressionSyntaxError("expected expression", token.start, token.end)
-        while self._peek("["):
-            self._take(); index=self._parse_binary(0); self._expect("]"); expression=Index(expression,index)
+        while self._peek() is not None and self._peek().lexeme in ("[", ".", "->"):
+            if self._peek("["):
+                self._take(); index=self._parse_binary(0); self._expect("]"); expression=Index(expression,index)
+                continue
+            through_pointer = self._take().lexeme == "->"
+            name = self._peek()
+            if name is None or name.kind != "identifier":
+                position = self._tokens[-1].end if name is None else name.start
+                raise ExpressionSyntaxError("expected field name", position, position)
+            self._take(); expression = Member(expression, name.lexeme, through_pointer)
         return expression
 
 __all__ = ["EvaluationMode", "ExpressionParser", "PrintRequest"]

@@ -1,7 +1,8 @@
 """Plain presentation of command results."""
 from __future__ import annotations
 from typing import Protocol
-from msxdbg.eval.values import ArrayValue, ScalarValue, StringValue, StructValue, ValueResult, VariableRow
+from msxdbg.eval.values import AddressValue, ArrayValue, ScalarValue, StringValue, StructValue, ValueResult, VariableRow
+from msxdbg.session.memory_map import Page3Report
 from .results import (BreakpointPayload, BreakpointTable, CommandResult,
     DisassemblyPayload, FrameTable, HelpPayload, MessagePayload, PageTable,
     RegisterTable, SourcePayload, StopPayload, SymbolPayload, UiAction)
@@ -19,6 +20,7 @@ def _scalar(value, base):
 
 def _value(value, base=10):
     if value is None: return "<unavailable>"
+    if isinstance(value, AddressValue): return f"0x{value.address:04x}"
     if isinstance(value, ScalarValue): return _scalar(value.value, base)
     if isinstance(value, StringValue):
         suffix = "…" if value.truncated else ""
@@ -36,6 +38,17 @@ def _result(result):
     if result.kind == "memory" and result.location and result.location.address is not None:
         text = f"0x{result.location.address:04x}: {text}"
     return text
+
+def _qualifier(value):
+    if value is None: return ""
+    parts=[]
+    if value.page is not None: parts.append(f"page {value.page}")
+    if value.primary_slot is not None:
+        slot=str(value.primary_slot)
+        if value.secondary_slot is not None: slot+=f".{value.secondary_slot}"
+        parts.append("slot " + slot)
+    if value.segment is not None: parts.append(f"segment {value.segment}")
+    return ("  " + " ".join(parts)) if parts else ""
 
 def _frame(frame, selected):
     marker = "*" if selected else " "
@@ -79,12 +92,22 @@ class TextRenderer:
             console.print(f"stopped at 0x{pc:04x}{suffix}"); return
         if isinstance(payload, BreakpointPayload):
             if payload.record is None: console.print("breakpoint deleted")
-            else: console.print(f"Breakpoint {payload.record.number} at 0x{payload.record.address:04x} ({payload.record.status})")
+            else:
+                condition = f" if {_escape(payload.record.condition)}" if payload.record.condition else ""
+                qualifier = _qualifier(payload.record.qualifier)
+                label = (f"Watchpoint {payload.record.number} {payload.record.access} "
+                         f"0x{payload.record.address:04x}+{payload.record.size}"
+                         if payload.record.kind == "watchpoint" else
+                         f"Breakpoint {payload.record.number} at 0x{payload.record.address:04x}")
+                console.print(f"{label}{condition}{qualifier} ({payload.record.status})")
             return
         if isinstance(payload, BreakpointTable):
             if not payload.records: console.print("No breakpoints.")
             for item in payload.records:
-                console.print(f"{item.number}  0x{item.address:04x}  {item.status}")
+                condition = f"  if {_escape(item.condition)}" if item.condition else ""
+                qualifier = _qualifier(item.qualifier)
+                kind = (f"watch {item.access} +{item.size}" if item.kind == "watchpoint" else "break")
+                console.print(f"{item.number}  {kind}  0x{item.address:04x}  {item.status}{condition}{qualifier}")
             return
         if isinstance(payload, RegisterTable):
             for name,value in sorted(payload.registers.values.items()):
@@ -94,6 +117,15 @@ class TextRenderer:
         if isinstance(payload, PageTable):
             for item in payload.pages:
                 console.print(f"page {item.page}: slot {item.primary_slot}.{item.secondary_slot} segment {item.segment}")
+            return
+        if isinstance(payload, Page3Report):
+            for region in payload.regions:
+                if region.start is None or region.end is None:
+                    console.print(f"{region.name}: <unknown: {_escape(region.unavailable_reason or 'limit unavailable')}>")
+                else:
+                    console.print(f"{region.name}: 0x{region.start:04x}..0x{region.end:04x} ({region.end-region.start} bytes)")
+            console.print("free: " + (str(payload.free_size) if payload.free_size is not None else "<unknown>"))
+            for warning in payload.warnings: console.print("warning: " + _escape(warning))
             return
         if isinstance(payload, SymbolPayload):
             if not payload.resolution.candidates: console.print("<symbol unavailable>")

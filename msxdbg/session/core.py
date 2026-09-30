@@ -4,15 +4,18 @@ from typing import Optional, Tuple
 
 from msxdbg.debuginfo.index import Project
 from msxdbg.debuginfo.model import Resolution, ResolutionStatus
-from msxdbg.target.api import ExecutionStatus, PageState, Target
-from .breakpoints import BreakpointManager, BreakpointRecord
-from .execution import CancellationToken, Clock, ExecutionController, ExecutionRequest
+from msxdbg.target.api import ExecutionStatus, PageState, Target, TargetError
+from .breakpoints import BreakpointManager, BreakpointRecord, MappingQualifier
+from .execution import (CancellationToken, Clock, ExecutionController,
+                        ExecutionKind, ExecutionRequest)
 from .frames import BacktraceResult, Frame, FrameService
 from .inspection import StopInspectionContext
 from .results import (CloseReport, DisassemblyResult, InvalidSessionState,
-                      ResolvedTarget, StopResult, TargetQuery)
+                      MemoryWriteResult, MutationVerificationError,
+                      RegisterWriteResult, ResolvedTarget, StopResult, TargetQuery)
 from .safety import (ConfirmationPermit, DangerousAction, InteractiveEntry,
-                     SafetyGate, SignatureStatus)
+                     SafetyGate, SignatureGuard)
+from .memory_map import DEFAULT_PAGE3_POLICY, MemoryMapService
 from .state import (SelectionState, SessionConfig, SessionState, StepMode,
                     StopCache, StopSnapshot)
 
@@ -22,6 +25,8 @@ class Session:
                  safety: SafetyGate, clock: Clock) -> None:
         self._project=project; self._target=target; self._config=config
         self._safety=safety; self._clock=clock
+        self._signature_guard=SignatureGuard(config.signature)
+        self._memory_map_service=MemoryMapService()
         self._state=SessionState.DISCONNECTED; self._mode=config.initial_mode
         self._breakpoint_manager=BreakpointManager(target)
         self._execution_controller=ExecutionController(target, project, clock)
@@ -73,6 +78,40 @@ class Session:
             request=ExecutionRequest(request.kind, request.address, self._mode, request.timeout_seconds)
         return self._execution_controller.run(request, self, cancel)
 
+    def continue_until_signature(self, timeout_seconds: Optional[float],
+                                 cancel: CancellationToken) -> StopResult:
+        if self._config.signature is None:
+            raise InvalidSessionState("continue --until-signature requires a configured signature")
+        if timeout_seconds is None or timeout_seconds <= 0:
+            raise ValueError("continue --until-signature requires a finite positive timeout")
+        if self._state not in (SessionState.RUNNING, SessionState.STOPPED):
+            raise InvalidSessionState("session is not attached")
+        if (self._state == SessionState.STOPPED and self._snapshot is not None
+                and self._snapshot.signature_status == "verified"):
+            return self.where()
+        last = None
+        deadline = self._clock.monotonic() + timeout_seconds
+        for _ in range(self._config.signature_attempt_limit):
+            if cancel.is_cancelled():
+                current = last or self.where()
+                return StopResult(current.snapshot, current.matching_breakpoints,
+                                  "cancelled", current.warnings)
+            remaining = deadline - self._clock.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("signature wait timed out; last confirmed state is preserved")
+            request = ExecutionRequest(ExecutionKind.CONTINUE,
+                                       timeout_seconds=remaining)
+            last = self._execution_controller.run(request, self, cancel)
+            if last.snapshot.signature_status == "verified":
+                return last
+            if cancel.is_cancelled():
+                return StopResult(last.snapshot, last.matching_breakpoints,
+                                  "cancelled", last.warnings)
+        assert last is not None and self._state == SessionState.STOPPED
+        raise TimeoutError(
+            f"signature was not verified after {self._config.signature_attempt_limit} stops; target is stopped"
+        )
+
     def invalidate(self) -> None:
         self._snapshot=None; self._memory_cache.clear(); self._stop_cache=StopCache()
         self._selection=None; self._memory_epoch+=1; self._state=SessionState.RUNNING
@@ -84,13 +123,12 @@ class Session:
     def _capture_stop(self) -> StopSnapshot:
         registers=self._target.read_registers(); pc=registers.get("PC")
         self._stop_id+=1
-        signature=SignatureStatus.NOT_CONFIGURED.value
-        if self._config.signature is not None:
-            spec=self._config.signature
-            signature=(SignatureStatus.VERIFIED.value if self._target.read_memory(spec.address,len(spec.expected)) == spec.expected
-                       else SignatureStatus.PENDING.value)
+        signature=self._signature_guard.check(self._target).value
+        pages=self._target.read_pages() if self._project.mappings else ()
+        active_image=self._project.image_for_pages(pages,pc) if pages else None
         self._snapshot=StopSnapshot(self._stop_id,self._memory_epoch,registers,
-                                    self._project.resolve(pc),signature)
+                                    self._project.resolve(pc,active_image),signature,
+                                    pages=pages)
         self._stop_cache = StopCache()
         self._selection = SelectionState(self._stop_id, 0)
         self._state=SessionState.STOPPED
@@ -139,7 +177,21 @@ class Session:
         self._selection = SelectionState(self._snapshot.stop_id, index)
         return trace.frames[index]
 
-    def add_breakpoint(self,target:ResolvedTarget)->BreakpointRecord: return self._breakpoint_manager.create(target)
+    def add_breakpoint(self,target:ResolvedTarget,condition:Optional[str]=None,
+                       remote_condition:Optional[str]=None,
+                       qualifier:Optional[MappingQualifier]=None)->BreakpointRecord:
+        if qualifier is not None:
+            if getattr(self._target.capabilities, "mapping_conditions", None) is False:
+                raise InvalidSessionState("target does not support mapping-qualified breakpoints")
+            pages=self._target.read_pages()
+            page=qualifier.page if qualifier.page is not None else target.address // 0x4000
+            observed=pages[page]
+            if qualifier.segment is not None and observed.segment == "unknown":
+                raise InvalidSessionState("target has no observable mapper segment for the qualified page")
+        return self._breakpoint_manager.create(target, condition, remote_condition, qualifier)
+    def add_watchpoint(self,access:str,address:int,size:int,
+                       condition:Optional[str]=None)->BreakpointRecord:
+        return self._breakpoint_manager.create_watchpoint(access,address,size,condition)
     def delete_breakpoint(self,number:int)->None: self._breakpoint_manager.delete(number)
     def suspend_breakpoint(self,number:int)->BreakpointRecord: return self._breakpoint_manager.suspend(number)
     def resume_breakpoint(self,number:int)->BreakpointRecord: return self._breakpoint_manager.resume(number)
@@ -153,7 +205,68 @@ class Session:
 
     def pages(self)->Tuple[PageState,...]: return self._target.read_pages()
     def page3(self, policy):
-        raise NotImplementedError("page-3 analysis belongs to the memory-map phase")
+        return self._memory_map_service.page3(
+            self.inspection(), self._project, policy or DEFAULT_PAGE3_POLICY)
+    def _begin_state_mutation(self) -> None:
+        if self._state != SessionState.STOPPED or self._snapshot is None:
+            raise InvalidSessionState("state mutation requires a stopped target")
+        self._snapshot=None; self._memory_cache.clear(); self._stop_cache=StopCache()
+        self._selection=None; self._memory_epoch+=1; self._state=SessionState.UNKNOWN
+
+    def write_memory(self, address: int, data: bytes) -> MemoryWriteResult:
+        data = bytes(data)
+        if not data:
+            raise ValueError("memory write requires at least one byte")
+        if not isinstance(address, int) or isinstance(address, bool) or address < 0 \
+                or address + len(data) > 0x10000:
+            raise ValueError("memory write range is outside CPU memory")
+        self._begin_state_mutation()
+        spec = self._config.signature
+        if spec is not None and address < spec.address + len(spec.expected) \
+                and spec.address < address + len(data):
+            self._signature_guard.rearm()
+        try:
+            self._target.write_memory(address, data)
+        except TargetError as error:
+            if not error.outcome_unknown:
+                try: self._capture_stop()
+                except Exception: self._state = SessionState.UNKNOWN
+            raise
+        try:
+            observed = self._target.read_memory(address, len(data))
+            snapshot = self._capture_stop()
+        except Exception as error:
+            self._state = SessionState.UNKNOWN
+            raise MutationVerificationError(
+                "memory write was accepted but verification failed", "write_memory") from error
+        return MemoryWriteResult(address, data, observed, snapshot)
+
+    def write_register(self, name: str, value: int) -> RegisterWriteResult:
+        if not name or not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError("register write requires a name and integer value")
+        # Validate the name and width against the current, complete register set
+        # before invalidating anything or issuing the mutation.
+        if self._state != SessionState.STOPPED or self._snapshot is None:
+            raise InvalidSessionState("state mutation requires a stopped target")
+        width = self._snapshot.registers.width(name)
+        if not 0 <= value < (1 << width):
+            raise ValueError("register value is outside its width")
+        self._begin_state_mutation()
+        try:
+            self._target.write_register(name, value)
+        except TargetError as error:
+            if not error.outcome_unknown:
+                try: self._capture_stop()
+                except Exception: self._state = SessionState.UNKNOWN
+            raise
+        try:
+            snapshot = self._capture_stop()
+            observed = snapshot.registers.get(name)
+        except Exception as error:
+            self._state = SessionState.UNKNOWN
+            raise MutationVerificationError(
+                "register write was accepted but verification failed", "write_register") from error
+        return RegisterWriteResult(name.upper(), value, observed, snapshot)
     def set_mode(self,mode:StepMode)->None: self._mode=mode
     def save(self)->None:
         self._saved_state=f"msxdbg-{self._memory_epoch}"
@@ -162,11 +275,12 @@ class Session:
                   entry: InteractiveEntry) -> ConfirmationPermit:
         return self._safety.authorize_typed(action, entry)
     def reset(self,permit:ConfirmationPermit)->None:
-        self._safety.consume(permit,DangerousAction.RESET); self.invalidate(); self._target.reset()
+        self._safety.consume(permit,DangerousAction.RESET)
+        self._signature_guard.rearm(); self.invalidate(); self._target.reset()
     def load(self,permit:ConfirmationPermit)->None:
         self._safety.consume(permit,DangerousAction.LOAD)
         if self._saved_state is None: raise InvalidSessionState("no saved state")
-        self.invalidate(); self._target.load_state(self._saved_state)
+        self._signature_guard.rearm(); self.invalidate(); self._target.load_state(self._saved_state)
     def close(self)->CloseReport:
         if self._state == SessionState.CLOSED: return CloseReport()
         report=self._breakpoint_manager.cleanup()

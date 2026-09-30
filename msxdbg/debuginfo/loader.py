@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import json
 import os
 from pathlib import Path
 from typing import Optional, Tuple
@@ -12,10 +13,11 @@ from .map_parser import parse_map
 from .lst_parser import parse_lst
 from .cdb_parser import parse_cdb
 from ._reconcile import reconcile
-from .index import Project
+from .index import ImageMapping, Project
 from .macros import MacroCatalog
-from .model import ImageId
+from .model import Field, ImageId, TypeId
 from .sources import SourceRepository
+from .header_parser import HeaderInput, parse_headers
 
 
 @dataclass(frozen=True)
@@ -26,12 +28,14 @@ class ImageSpec:
     out: Path
     maps: Optional[Tuple[Path, ...]] = None
     cdbs: Optional[Tuple[Path, ...]] = None
+    mappings: Tuple[Tuple[int, str, Optional[str], Optional[str]], ...] = ()
 
     def __post_init__(self) -> None:
         if self.maps is not None:
             object.__setattr__(self, "maps", tuple(self.maps))
         if self.cdbs is not None:
             object.__setattr__(self, "cdbs", tuple(self.cdbs))
+        object.__setattr__(self, "mappings", tuple(self.mappings))
 
 
 @dataclass(frozen=True)
@@ -143,12 +147,38 @@ class ProjectLoader:
             images.append(image)
             diagnostics.extend(image.diagnostics)
             listing_directories.extend(path.parent for path in artifacts.listings)
+        header_inputs = []
         for path in spec.struct_headers:
-            diagnostics.append(Diagnostic("load.headers-unavailable", "warning",
-                "header type and macro parsing is not implemented; header was not loaded", (Origin(Path(path)),)))
-        return LoadedProject(Project(tuple(images)),
+            try:
+                header_inputs.append(HeaderInput(Path(path), Path(path).read_text(encoding="utf-8")))
+            except (OSError, UnicodeError) as exc:
+                diagnostics.append(Diagnostic("load.header-unreadable", "warning",
+                    str(exc), (Origin(Path(path)),)))
+        header_result = parse_headers(header_inputs)
+        diagnostics.extend(header_result.diagnostics)
+        if header_result.value.types:
+            updated = []
+            for image in images:
+                id_map = {item.id: TypeId(item.id.record_identity, image.id)
+                          for item in header_result.value.types}
+                header_types = tuple(replace(item, id=id_map[item.id],
+                    referenced_type=id_map.get(item.referenced_type, item.referenced_type),
+                    fields=tuple(Field(field.name, id_map.get(field.type_id, field.type_id), field.offset)
+                                 for field in item.fields))
+                    for item in header_result.value.types)
+                existing_names = {item.name for item in image.types if item.category != "incomplete"}
+                accepted = tuple(item for item in header_types if item.name not in existing_names)
+                for item in header_types:
+                    if item.name in existing_names:
+                        diagnostics.append(Diagnostic("load.header-type-shadowed", "warning",
+                            f"CDB type takes precedence over header type {item.name}", item.evidence))
+                updated.append(replace(image, types=image.types + accepted))
+            images = updated
+        mappings = tuple(ImageMapping(spec.id, *mapping)
+                         for spec in spec.images for mapping in spec.mappings)
+        return LoadedProject(Project(tuple(images), mappings),
             SourceRepository(spec.source_roots, tuple(sorted(set(listing_directories), key=str))),
-            MacroCatalog(), tuple(diagnostics))
+            MacroCatalog(header_result.value.macros), tuple(diagnostics))
 
 
 def _failure(code, message, path):
@@ -156,9 +186,63 @@ def _failure(code, message, path):
 
 
 def read_project_spec(path: Path) -> ProjectSpec:
-    """Read an external project manifest once its schema is stabilized."""
-
-    raise NotImplementedError("debuginfo.read_project_spec is not implemented")
+    """Read the version-1 JSON project manifest without performing target I/O."""
+    path = Path(path)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise _failure("project.invalid-json", str(exc), path) from exc
+    if (not isinstance(raw, dict) or type(raw.get("version")) is not int
+            or raw.get("version") != 1):
+        raise _failure("project.unsupported-version",
+                       "project manifest version must be 1", path)
+    allowed = {"version", "images", "source_roots", "struct_headers"}
+    unknown = set(raw) - allowed
+    if unknown:
+        raise _failure("project.unknown-field",
+                       "unknown project fields: " + ", ".join(sorted(unknown)), path)
+    if not isinstance(raw.get("images"), list) or not raw["images"]:
+        raise _failure("project.invalid-images", "images must be a non-empty array", path)
+    base = path.resolve().parent
+    def paths(value, field):
+        if value is None:
+            return None
+        if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
+            raise _failure("project.invalid-field", f"{field} must be an array of paths", path)
+        return tuple((base / item).resolve() if not Path(item).is_absolute()
+                     else Path(item).resolve() for item in value)
+    images = []
+    for index, item in enumerate(raw["images"]):
+        if not isinstance(item, dict) or set(item) - {"id", "out", "maps", "cdbs", "mappings"}:
+            raise _failure("project.invalid-image", f"invalid image at index {index}", path)
+        if (not isinstance(item.get("id"), str) or not item["id"]
+                or not isinstance(item.get("out"), str) or not item["out"]):
+            raise _failure("project.invalid-image", f"image {index} requires string id and out", path)
+        out = Path(item["out"])
+        out = (base / out).resolve() if not out.is_absolute() else out.resolve()
+        raw_mappings = item.get("mappings", [])
+        if not isinstance(raw_mappings, list):
+            raise _failure("project.invalid-mappings", "mappings must be an array", path)
+        mappings = []
+        for mapping in raw_mappings:
+            if not isinstance(mapping, dict) or set(mapping) - {"page", "slot", "segment"}:
+                raise _failure("project.invalid-mapping", "invalid image mapping", path)
+            page, slot, segment = mapping.get("page"), mapping.get("slot"), mapping.get("segment")
+            if type(page) is not int or page not in range(4) or not isinstance(slot, str):
+                raise _failure("project.invalid-mapping", "mapping requires page 0..3 and slot string", path)
+            fields = slot.split(".")
+            if len(fields) not in (1, 2) or fields[0] not in ("0", "1", "2", "3") \
+                    or len(fields) == 2 and fields[1] not in ("0", "1", "2", "3", "X"):
+                raise _failure("project.invalid-mapping", "mapping slot expects P or P.S", path)
+            if segment is not None and (type(segment) is not int or segment < 0):
+                raise _failure("project.invalid-mapping", "mapping segment must be non-negative", path)
+            mappings.append((page, fields[0], fields[1] if len(fields) == 2 else None,
+                             str(segment) if segment is not None else None))
+        images.append(ImageSpec(ImageId(item["id"]), out,
+                                paths(item.get("maps"), "maps"),
+                                paths(item.get("cdbs"), "cdbs"), tuple(mappings)))
+    return ProjectSpec(tuple(images), paths(raw.get("source_roots", []), "source_roots") or (),
+                       paths(raw.get("struct_headers", []), "struct_headers") or ())
 
 
 __all__ = [

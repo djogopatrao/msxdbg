@@ -83,7 +83,8 @@ def test_live_target_enables_only_probed_optimizations(monkeypatch, tmp_path):
     class Transport:
         def __init__(self, config):
             self.config = config
-            self.replies = iter((ok("0"), ok("0"), ok("ff")))
+            self.replies = iter((ok("0"), ok("0"), ok("ff"),
+                ok("-condition"), ok("read_mem write_mem"), ok("help")))
             self.closed = False
         def request(self, command): return next(self.replies)
         def close(self): self.closed = True
@@ -96,6 +97,9 @@ def test_live_target_enables_only_probed_optimizations(monkeypatch, tmp_path):
 
     assert target.capabilities.persistent
     assert target.capabilities.block_read
+    assert target.capabilities.conditional_breakpoints
+    assert target.capabilities.watchpoints
+    assert target.capabilities.mapping_conditions
     assert len(created) == 1
 
 

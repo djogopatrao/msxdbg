@@ -264,7 +264,7 @@ Macros de objeto e com parâmetros são expandidas por tokens antes da AST, a pa
 
 Cálculos constantes não exigem acesso ao target nem snapshot. O avaliador identifica as dependências da expressão expandida antes de solicitar contexto de inspeção. Resultados de cálculo preservam inteiros sem máscara; apenas conversões explícitas para endereço aplicam a regra de 16 bits.
 
-Numa segunda etapa, adicionar `*p`, `&x`, `a[i]`, `s.f` e `p->f` com tipos CDB. O avaliador distingue `AddressValue`, `ScalarValue` e `LValue(type, storage)`, evitando tratar toda expressão como um inteiro sem tipo. Preservar a precedência legada entre nomes de variáveis e registradores; permitir qualificação explícita ao expandir a gramática.
+A etapa tipada aceita `*p`, `&x`, `a[i]`, `s.f` e `p->f` com tipos CDB. O avaliador distingue `AddressValue`, `ScalarValue` e `LValue(type, location)`, evitando tratar toda expressão como um inteiro sem tipo. A localização continua dependente do frame selecionado; caller não reutiliza registradores vivos do frame atual.
 
 Regras de valor:
 
@@ -273,7 +273,7 @@ Regras de valor:
 - Decodificação little-endian; layout sem padding somente sob o perfil ABI documentado.
 - Tipos incompletos e ponteiros sem formato adequado não recebem defaults inventados.
 - Variáveis em registradores trazem a ressalva de ausência de live ranges.
-- `f32` pode representar explicitamente IEEE-754, mas a inferência de `float` do compilador depende de validar o ABI usado.
+- `f32` representa IEEE-754 binary32 little-endian, validado por bytes gerados pelo SDCC 4.6.0 para Z80; versões/targets diferentes exigem nova evidência.
 
 ## 9. Comandos e contrato JSON
 
@@ -310,6 +310,8 @@ Mudanças deliberadas de comportamento: print sem tipo calcula expressões numé
 Ficam fora da primeira versão: watchpoints, condições Tcl arbitrárias, breakpoints por segmento, resolução automática por mapper, novas áreas de código e continuação automática até assinatura. A existência de slots no modelo de inspeção não implica suporte a breakpoints qualificados.
 
 O [BACKLOG.md](BACKLOG.md) detalha essas extensões e os demais requisitos derivados da SPEC. Condições futuras serão predicados tipados (F08), sem interface de Tcl arbitrário. Escrita de memória/registradores (F14/F15) exige novas APIs explícitas, invalidação e verificação do resultado. Gerenciamento de mídia e ciclo de vida do emulador permanecem excluídos (X01/X02), não apenas adiados.
+
+As fases propostas após a conclusão desta arquitetura estão organizadas em [ROADMAP_PHASES_7_PLUS.md](ROADMAP_PHASES_7_PLUS.md). O roadmap não promove automaticamente itens adiados nem altera as restrições de segurança deste documento.
 
 ## 11. Validação e implementação incremental
 

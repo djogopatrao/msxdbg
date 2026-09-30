@@ -70,6 +70,26 @@ class DisassemblyResult:
 
 
 @dataclass(frozen=True)
+class MemoryWriteResult:
+    address: int
+    requested: bytes
+    observed: bytes
+    snapshot: "StopSnapshot"
+
+    @property
+    def verified(self) -> bool:
+        return self.requested == self.observed
+
+
+@dataclass(frozen=True)
+class RegisterWriteResult:
+    name: str
+    requested: int
+    observed: int
+    snapshot: "StopSnapshot"
+
+
+@dataclass(frozen=True)
 class CloseReport:
     removed_ids: Tuple[str, ...] = ()
     pending_ids: Tuple[str, ...] = ()
@@ -101,4 +121,18 @@ class StaleInspectionError(SessionError):
     pass
 
 
-__all__ = ["CloseReport", "DisassemblyResult", "InvalidSessionState", "LocationResult", "ResolvedTarget", "SafetyError", "SessionError", "StaleInspectionError", "StopResult", "TargetQuery", "TargetResolutionError"]
+class MutationVerificationError(SessionError):
+    """A mutation was accepted but its resulting state could not be verified."""
+
+    outcome_unknown = True
+
+    def __init__(self, message: str, operation: str) -> None:
+        super().__init__(message)
+        self.operation = operation
+
+
+__all__ = ["CloseReport", "DisassemblyResult", "InvalidSessionState", "LocationResult",
+           "MemoryWriteResult", "MutationVerificationError", "RegisterWriteResult",
+           "ResolvedTarget", "SafetyError",
+           "SessionError", "StaleInspectionError", "StopResult", "TargetQuery",
+           "TargetResolutionError"]

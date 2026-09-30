@@ -209,6 +209,27 @@ class OpenMSXTargetTests(unittest.TestCase):
         debugger.remove_breakpoint("bp#9")
         self.assertEqual(3, len(transport.requests))
 
+    def test_memory_and_register_writes_use_only_allowlisted_commands(self):
+        debugger, transport = target(
+            ("debug write memory 32768 52; debug write memory 32769 18", ok()),
+            ("reg PC 4660", ok()),
+        )
+        debugger.write_memory(0x8000, b"\x34\x12")
+        debugger.write_register("PC", 0x1234)
+        self.assertEqual(2, len(transport.requests))
+
+    def test_register_half_is_read_then_written_as_a_coherent_pair(self):
+        values = " ".join(str(value) for value in (
+            0, 0, 0, 0, 0, 0, 0xF000, 0x1234,
+            0, 0, 0, 0, 0, 0, 0, 0,
+        ))
+        debugger, transport = target(
+            (lambda command: command.startswith("list "), ok(values)),
+            ("reg PC 4779", ok()),
+        )
+        debugger.write_register("PCL", 0xAB)
+        self.assertEqual(2, len(transport.requests))
+
     def test_nok_and_malformed_breakpoint_data_do_not_succeed(self):
         debugger, _ = target((None, TclReply("nok", "rejected")))
         with self.assertRaises(TargetCommandError):

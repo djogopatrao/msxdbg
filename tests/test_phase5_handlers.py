@@ -8,7 +8,7 @@ from msxdbg.eval.values import ValueDecoder, ValueLimits
 from msxdbg.session.results import ResolvedTarget
 from msxdbg.session.state import StepMode
 from msxdbg.ui.commands import (
-    BreakpointNumberArguments, CommandContext, ConfirmationArguments,
+    BreakpointNumberArguments, CommandContext, ConfirmationArguments, ContinueArguments,
     DisassemblyCursor, ModeArguments, NavigationState, NoArguments,
     SourceCursor, TargetArguments, handle_break, handle_clear, handle_continue,
     handle_delete, handle_help, handle_load, handle_mode, handle_quit,
@@ -28,11 +28,14 @@ class Session:
         target = ResolvedTarget(0x1234, Resolution(ResolutionStatus.MISSING), "main")
         return Resolution(ResolutionStatus.UNIQUE, (target,))
 
-    def add_breakpoint(self, target): self.calls.append(("add", target)); return "breakpoint"
+    def add_breakpoint(self, target, condition=None, remote_condition=None, qualifier=None):
+        self.calls.append(("add", target, condition, remote_condition, qualifier)); return "breakpoint"
     def delete_breakpoint(self, number): self.calls.append(("delete", number))
     def suspend_breakpoint(self, number): self.calls.append(("suspend", number)); return "suspended"
     def resume_breakpoint(self, number): self.calls.append(("resume", number)); return "resumed"
     def execute(self, request, cancel): self.calls.append(("execute", request)); return "stopped"
+    def continue_until_signature(self, timeout, cancel):
+        self.calls.append(("until-signature", timeout)); return "signature-stopped"
     def where(self): self.calls.append(("where",)); return "where"
     def set_mode(self, mode): self.calls.append(("mode", mode)); self.mode = mode
     def save(self): self.calls.append(("save",))
@@ -54,7 +57,8 @@ def test_breakpoint_and_execution_handlers_delegate_typed_requests():
     assert handle_delete(BreakpointNumberArguments(2), ctx).ok
     assert handle_suspend(BreakpointNumberArguments(2), ctx).payload.record == "suspended"
     assert handle_resume(BreakpointNumberArguments(2), ctx).payload.record == "resumed"
-    assert handle_continue(NoArguments(), ctx).payload.result == "stopped"
+    assert handle_continue(ContinueArguments(), ctx).payload.result == "stopped"
+    assert handle_continue(ContinueArguments(True), ctx).payload.result == "signature-stopped"
     assert handle_until(target, ctx).payload.result == "stopped"
     assert handle_where(NoArguments(), ctx).payload.result == "where"
     execute_requests = [call[1] for call in ctx.session.calls if call[0] == "execute"]
@@ -71,7 +75,7 @@ def test_mode_save_actions_and_help_are_concrete_results():
     assert handle_clear(NoArguments(), ctx).payload == UiAction(UiAction.CLEAR)
     assert handle_quit(NoArguments(), ctx).payload == UiAction(UiAction.QUIT)
     help_result = handle_help(NoArguments(), ctx)
-    assert help_result.ok and len(help_result.payload.entries) == 24
+    assert help_result.ok and len(help_result.payload.entries) == 26
 
 
 def test_dangerous_handlers_require_fresh_interactive_confirmation():

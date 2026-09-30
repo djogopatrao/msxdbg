@@ -2,7 +2,7 @@
 
 Análise da [SPEC.md](SPEC.md), especialmente §§7–8, complementada pelo §12 de [COMMANDS.md](COMMANDS.md), pela [arquitetura](ARCHITECTURE.md) e pelo [desenho dos módulos](MODULE_DESIGN.md).
 
-Este backlog registra trabalho futuro; nenhum item está implementado neste diretório. Prioridades são propostas de ordenação, não datas de entrega. A inclusão de uma funcionalidade não torna sua sintaxe disponível. A SPEC permanece como referência histórica; este documento consolida os requisitos da evolução.
+Este backlog registra trabalho futuro e o estado dos itens já entregues. Prioridades são propostas de ordenação, não datas de entrega. A SPEC permanece como referência histórica; este documento consolida os requisitos da evolução.
 
 ## 1. Classificação e prioridades
 
@@ -21,18 +21,18 @@ Este backlog registra trabalho futuro; nenhum item está implementado neste dire
 | F02 | Nomes C e seleção explícita de imagem | P1 | Planejado | SPEC §8.2.2, §7.2; ARCHITECTURE §4 |
 | F03 | Configuração explícita multi-imagem | P1 | Planejado | SPEC B11; ARCHITECTURE §4 |
 | F04 | Expressões completas e formato explícito de print | P1 | Planejado | SPEC §8.2.3 |
-| F05 | Tipos de structs a partir do CDB | P1 | Planejado, condicionado a fixtures | SPEC §8.2.1 |
-| F06 | Expressões C tipadas: ponteiros, arrays e campos | P2 | Adiado | SPEC §8.2.3 |
-| F07 | Execução até reconhecimento de assinatura | P2 | Adiado | SPEC §8.3; COMMANDS §12 |
-| F08 | Breakpoints condicionais | P2 | Adiado | SPEC §8.3; COMMANDS §12 |
-| F09 | Breakpoints qualificados por slot/mapper | P2 | Adiado | SPEC §8.3 e exclusão inicial do §1; COMMANDS §12 |
-| F10 | Watchpoints de memória | P2 | Adiado | SPEC §8.3; COMMANDS §12 |
-| F11 | Resolução de código fora de `_CODE` | P2 | Adiado | SPEC §8.3 e §7.2 |
+| F05 | Tipos de structs a partir do CDB | P1 | Concluído na fase 8 | SPEC §8.2.1 |
+| F06 | Expressões C tipadas: ponteiros, arrays e campos | P2 | Concluído na fase 8 | SPEC §8.2.3 |
+| F07 | Execução até reconhecimento de assinatura | P2 | Concluído na fase 9 | SPEC §8.3; COMMANDS §12 |
+| F08 | Breakpoints condicionais | P2 | Concluído na fase 9 | SPEC §8.3; COMMANDS §12 |
+| F09 | Breakpoints qualificados por slot/mapper | P2 | Concluído na fase 9 | SPEC §8.3 e exclusão inicial do §1; COMMANDS §12 |
+| F10 | Watchpoints de memória | P2 | Concluído na fase 9 | SPEC §8.3; COMMANDS §12 |
+| F11 | Resolução de código fora de `_CODE` | P2 | Concluído na fase 10 | SPEC §8.3 e §7.2 |
 | F12 | Diagnóstico visível de conflitos de bases | P1 | Planejado | SPEC §8.3 |
-| F13 | Seleção de imagem pelo mapeamento ativo | P3 | Investigação | SPEC §7.2; COMMANDS §12 |
-| F14 | Escrita de memória | P3 | Adiado | SPEC §8.1; COMMANDS §12 |
-| F15 | Escrita de registradores | P3 | Adiado | COMMANDS §12; extensão sem comando na SPEC |
-| F16 | Leitura de statics sem CDB quando demonstrável | P3 | Investigação | Limitação da SPEC §7.2 |
+| F13 | Seleção de imagem pelo mapeamento ativo | P3 | Concluído na fase 10 | SPEC §7.2; COMMANDS §12 |
+| F14 | Escrita de memória | P3 | Concluído na fase 10 | SPEC §8.1; COMMANDS §12 |
+| F15 | Escrita de registradores | P3 | Concluído na fase 10 | COMMANDS §12; extensão sem comando na SPEC |
+| F16 | Leitura de statics sem CDB quando demonstrável | P3 | Concluído na fase 10 | Limitação da SPEC §7.2 |
 | F17 | Print como calculadora, hex() e bin() | P1 | Planejado | Solicitação posterior do usuário; §8 deste documento |
 | F18 | Macros de objeto e com parâmetros em print | P1 | Planejado | Solicitação posterior do usuário; §8 deste documento |
 
@@ -86,7 +86,7 @@ Suportar `*p`, `&x`, `a[i]`, `s.f` e `p->f` usando informação de tipo disponí
 
 **Aceitação:** indexação usa tamanho do elemento; campo usa offset comprovado; acesso indireto respeita largura do ponteiro Z80; erros de tipo/localização são explícitos; operandos podem ser variáveis CDB no frame escolhido. `&x` produz endereço como valor, sem leitura acidental nesse endereço. Preservar o significado das formas legadas de print e testar conflitos entre indexação MAP explícita e indexação C tipada.
 
-**Dependências:** F04, F05 e localização de variáveis. **Pendente:** formalizar a gramática combinada e os formatos de saída antes de ampliar COMMANDS como sintaxe aceita.
+**Dependências atendidas:** F04, F05 e localização de variáveis. A gramática e os formatos estão formalizados em COMMANDS; casts C permanecem fora do escopo.
 
 ### F07 — Continuar até assinatura
 

@@ -26,6 +26,8 @@ ALLOW_EXECUTION = os.environ.get("MSXDBG_LIVE_EXECUTION") == "1"
 ALLOW_OPTIMIZATIONS = os.environ.get("MSXDBG_LIVE_OPTIMIZATIONS") == "1"
 LIVE_OUT = os.environ.get("MSXDBG_LIVE_OUT")
 
+pytestmark = pytest.mark.live
+
 
 def _target() -> OpenMSXTarget:
     socket_path = discover_socket(Path(LIVE_SOCKET))

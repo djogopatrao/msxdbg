@@ -1,5 +1,6 @@
 """Private type reconciliation for the supported Z80 CDB subset."""
 from dataclasses import replace
+import re
 
 from .diagnostics import Diagnostic
 from .model import Field, ModuleId, TypeDef, TypeId
@@ -121,8 +122,8 @@ class TypeResolver:
                 child = self._chain(rest, signed, self._size(rest, module_key), module, origin)
                 child_id = child.id
             result = TypeDef(id_, ','.join(tokens), 'pointer', 2, False, child_id, evidence=(origin,))
-        elif token.startswith('DA') and token[2:].isdigit() and rest:
-            count = int(token[2:])
+        elif self._array_count(token) is not None and rest:
+            count = self._array_count(token)
             child_size = self._size(rest, module_key)
             child = self._chain(rest, signed, child_size, module, origin)
             result = TypeDef(id_, ','.join(tokens), 'array', count * child_size, signed,
@@ -146,14 +147,20 @@ class TypeResolver:
         token = tokens[0]
         if token in ('DG', 'DC', 'DD', 'DX', 'DP', 'DI'):
             return 2
-        if token.startswith('DA') and token[2:].isdigit():
-            return int(token[2:]) * self._size(tokens[1:], module)
+        count = self._array_count(token)
+        if count is not None:
+            return count * self._size(tokens[1:], module)
         if token.startswith('ST'):
             return self.struct(module, token[2:]).size
         sizes = {'SC': 1, 'SI': 2, 'SS': 2, 'SL': 4, 'SV': 0, 'SF': 4}
         if token not in sizes:
             raise ValueError('unknown CDB type')
         return sizes[token]
+
+    @staticmethod
+    def _array_count(token):
+        match = re.fullmatch(r'DA([0-9]+)d?', token)
+        return int(match.group(1)) if match else None
 
     def finish(self):
         for module, name in self.records:

@@ -12,7 +12,7 @@ import time
 from typing import Optional, Sequence, Tuple
 
 from .debuginfo.diagnostics import ProjectLoadError
-from .debuginfo.loader import ImageSpec, ProjectLoader, ProjectSpec
+from .debuginfo.loader import ImageSpec, ProjectLoader, ProjectSpec, read_project_spec
 from .debuginfo.model import ImageId
 from .debuginfo.macros import MacroContext
 from .eval.evaluator import Evaluator
@@ -35,6 +35,7 @@ class ResolveOptions:
     outputs: Tuple[Path, ...]
     target: str
     maps: Optional[Tuple[Path, ...]] = None
+    project: Optional[Path] = None
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,7 @@ class ShellOptions:
     struct_headers: Tuple[Path, ...] = ()
     signature: Optional[SignatureSpec] = None
     mode: StepMode = StepMode.SOURCE
+    project: Optional[Path] = None
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,7 @@ class ExecOptions:
     struct_headers: Tuple[Path, ...] = ()
     signature: Optional[SignatureSpec] = None
     mode: StepMode = StepMode.SOURCE
+    project: Optional[Path] = None
 
 
 def build_argument_parser() -> ArgumentParser:
@@ -68,12 +71,16 @@ def build_argument_parser() -> ArgumentParser:
     parser.add_argument('--version', action='store_true', help='show package version')
     subcommands = parser.add_subparsers(dest='command')
     resolve = subcommands.add_parser('resolve', help='resolve an address or source line offline')
-    resolve.add_argument('--out', type=Path, action='append', required=True)
+    resolve_source = resolve.add_mutually_exclusive_group(required=True)
+    resolve_source.add_argument('--out', type=Path, action='append')
+    resolve_source.add_argument('--project', type=Path)
     resolve.add_argument('--map', type=Path, action='append', dest='maps')
     resolve.add_argument('target', help='[image::]0xADDR or [image::]file:line')
     def live(name, help_text):
         command = subcommands.add_parser(name, help=help_text)
-        command.add_argument('--out', type=Path, action='append', required=True)
+        source = command.add_mutually_exclusive_group(required=True)
+        source.add_argument('--out', type=Path, action='append')
+        source.add_argument('--project', type=Path)
         command.add_argument('--map', type=Path, action='append', dest='maps')
         command.add_argument('--cdb', type=Path, action='append', dest='cdbs')
         command.add_argument('--socket', type=Path)
@@ -133,24 +140,57 @@ def _location_text(location):
     return text.rstrip()
 
 
+def _diagnostic_lines(diagnostics, prefix: str = "warning"):
+    """Aggregate repeated diagnostics while retaining every distinct origin."""
+    grouped = {}
+    for diagnostic in diagnostics:
+        key = (diagnostic.code, diagnostic.severity, diagnostic.message)
+        entry = grouped.setdefault(key, [0, []])
+        entry[0] += 1
+        for origin in diagnostic.origins:
+            marker = (origin.path, origin.line, origin.record_kind)
+            if marker not in entry[1]:
+                entry[1].append(marker)
+    lines = []
+    for (code, severity, message), (count, origins) in grouped.items():
+        label = prefix if prefix else severity
+        suffix = f" ({count} occurrences)" if count > 1 else ""
+        lines.append(f"{label}: {code}: {message}{suffix}")
+        for path, line, record_kind in origins:
+            location = str(path) + (f":{line}" if line is not None else "")
+            lines.append(f"  origin: {location} [{record_kind}]")
+    return tuple(lines)
+
+
 def run_resolve(options: ResolveOptions) -> int:
     try:
         image, address, path, line = _target(options.target)
-        if not options.outputs:
-            raise ValueError('at least one --out is required')
-        if len({Path(out).resolve() for out in options.outputs}) != len(options.outputs):
-            raise ValueError('duplicate --out directories')
-        if options.maps is not None and len(options.outputs) != 1:
-            raise ValueError('--map overrides require exactly one --out')
-        names = Counter(Path(out).name for out in options.outputs)
-        specs = tuple(ImageSpec(
-            ImageId(Path(out).name if names[Path(out).name] == 1 else str(Path(out).resolve())),
-            Path(out), options.maps) for out in options.outputs)
-        loaded = ProjectLoader().load(ProjectSpec(specs))
-        if image is not None and image not in {item.id for item in loaded.project.images}:
-            raise ValueError('unknown image qualifier: ' + image.value)
-        result = (loaded.project.resolve(address, image) if address is not None else
-                  loaded.project.resolve_line(path, line, image))
+        if options.project is not None:
+            if options.outputs or options.maps is not None:
+                raise ValueError('--project cannot be combined with --out or --map')
+            spec = read_project_spec(options.project)
+            loaded = ProjectLoader().load(spec)
+            image_ids = {item.id for item in loaded.project.images}
+            if image is not None and image not in image_ids:
+                raise ValueError('unknown image qualifier: ' + image.value)
+            result = (loaded.project.resolve(address, image) if address is not None else
+                      loaded.project.resolve_line(path, line, image))
+        else:
+            if not options.outputs:
+                raise ValueError('at least one --out is required')
+            if len({Path(out).resolve() for out in options.outputs}) != len(options.outputs):
+                raise ValueError('duplicate --out directories')
+            if options.maps is not None and len(options.outputs) != 1:
+                raise ValueError('--map overrides require exactly one --out')
+            names = Counter(Path(out).name for out in options.outputs)
+            specs = tuple(ImageSpec(
+                ImageId(Path(out).name if names[Path(out).name] == 1 else str(Path(out).resolve())),
+                Path(out), options.maps) for out in options.outputs)
+            loaded = ProjectLoader().load(ProjectSpec(specs))
+            if image is not None and image not in {item.id for item in loaded.project.images}:
+                raise ValueError('unknown image qualifier: ' + image.value)
+            result = (loaded.project.resolve(address, image) if address is not None else
+                      loaded.project.resolve_line(path, line, image))
     except ValueError as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 2
@@ -159,8 +199,8 @@ def run_resolve(options: ResolveOptions) -> int:
         for diagnostic in exc.diagnostics:
             print(f'{diagnostic.code}: {diagnostic.message}', file=sys.stderr)
         return 1
-    for diagnostic in loaded.diagnostics:
-        print(f'warning: {diagnostic.code}: {diagnostic.message}', file=sys.stderr)
+    for line in _diagnostic_lines(loaded.diagnostics):
+        print(line, file=sys.stderr)
     if result.status == 'missing':
         print('unresolved: ' + options.target, file=sys.stderr)
         return 1
@@ -202,8 +242,14 @@ def _project_spec(outputs, maps=None, cdbs=None, source_roots=(), struct_headers
 
 
 def _compose_context(options, input_origin: str):
-    spec = _project_spec(options.outputs, options.maps, options.cdbs,
-                         options.source_roots, options.struct_headers)
+    if options.project is not None:
+        if (options.outputs or options.maps is not None or options.cdbs is not None
+                or options.source_roots or options.struct_headers):
+            raise ValueError('--project cannot be combined with --out, --map, --cdb, --source-root, or --struct-header')
+        spec = read_project_spec(options.project)
+    else:
+        spec = _project_spec(options.outputs, options.maps, options.cdbs,
+                             options.source_roots, options.struct_headers)
     loaded = ProjectLoader().load(spec)
     socket_path = discover_socket(options.socket)
     target = _build_live_target(socket_path)
@@ -223,6 +269,7 @@ def _build_live_target(socket_path: Path) -> OpenMSXTarget:
     optimized = OpenMSXTransport(TransportConfig(
         socket_path, 5.0, ConnectionMode.PERSISTENT
     ))
+    features = (None, None, None)
     try:
         first = optimized.request("expr 0")
         second = optimized.request("expr 0")
@@ -234,18 +281,35 @@ def _build_live_target(socket_path: Path) -> OpenMSXTarget:
                 or block.status != "ok"
                 or not re.fullmatch(r"[0-9A-Fa-f]{2}", block.text.strip())):
             raise ValueError("openMSX optimization probe was rejected")
+        features = _probe_debug_features(optimized)
     except (TargetError, ValueError):
         optimized.close()
         fallback = OpenMSXTransport(TransportConfig(socket_path, 5.0))
-        return OpenMSXTarget(fallback, TargetCapabilities())
+        return OpenMSXTarget(fallback, TargetCapabilities(
+            conditional_breakpoints=False, watchpoints=False,
+            mapping_conditions=False))
     return OpenMSXTarget(
-        optimized, TargetCapabilities(persistent=True, block_read=True)
+        optimized, TargetCapabilities(persistent=True, block_read=True,
+            conditional_breakpoints=features[0], watchpoints=features[1],
+            mapping_conditions=features[2])
     )
 
 
+def _probe_debug_features(transport: OpenMSXTransport):
+    """Probe extension syntax without creating or modifying debug points."""
+    breakpoint = transport.request("help debug breakpoint create")
+    watchpoint = transport.request("help debug watchpoint create")
+    slot = transport.request("help get_selected_slot")
+    conditional = breakpoint.status == "ok" and "-condition" in breakpoint.text
+    watches = (watchpoint.status == "ok" and "read_mem" in watchpoint.text
+               and "write_mem" in watchpoint.text)
+    mapping = conditional and slot.status == "ok"
+    return conditional, watches, mapping
+
+
 def _report_diagnostics(loaded) -> None:
-    for diagnostic in loaded.diagnostics:
-        print(f'{diagnostic.severity}: {diagnostic.code}: {diagnostic.message}', file=sys.stderr)
+    for line in _diagnostic_lines(loaded.diagnostics, prefix=""):
+        print(line, file=sys.stderr)
 
 
 def _run_live(options, batch: bool) -> int:
@@ -298,14 +362,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print('msxdbg ' + installed)
         return 0
     if options.command == 'resolve':
-        return run_resolve(ResolveOptions(tuple(options.out), options.target,
-            tuple(options.maps) if options.maps is not None else None))
+        return run_resolve(ResolveOptions(tuple(options.out or ()), options.target,
+            tuple(options.maps) if options.maps is not None else None, options.project))
     mode = StepMode.SOURCE if options.mode in ('c', 'source') else StepMode.ASSEMBLY
-    common = dict(outputs=tuple(options.out), socket=options.socket,
+    common = dict(outputs=tuple(options.out or ()), socket=options.socket,
         maps=tuple(options.maps) if options.maps is not None else None,
         cdbs=tuple(options.cdbs) if options.cdbs is not None else None,
         source_roots=tuple(options.source_root), struct_headers=tuple(options.struct_header),
-        signature=options.verify_signature, mode=mode)
+        signature=options.verify_signature, mode=mode, project=options.project)
     if options.command == 'shell':
         return run_shell(ShellOptions(**common))
     if options.command == 'exec':

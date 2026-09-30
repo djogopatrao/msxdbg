@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
-from typing import Mapping, NoReturn, Protocol, Tuple
+from typing import Mapping, NoReturn, Optional, Protocol, Tuple
 
 
 class ExecutionStatus(str, Enum):
@@ -22,10 +22,15 @@ class RegisterSet:
 
     def get(self, name: str) -> int:
         key = name.upper()
+        aliases = {"AF2": "AF'", "BC2": "BC'", "DE2": "DE'", "HL2": "HL'"}
+        key = aliases.get(key, key)
         if key in self.values:
             return self.values[key]
         pairs = {"AF": ("A", "F"), "BC": ("B", "C"), "DE": ("D", "E"),
-                 "HL": ("H", "L"), "IX": ("IXH", "IXL"), "IY": ("IYH", "IYL")}
+                 "HL": ("H", "L"), "IX": ("IXH", "IXL"), "IY": ("IYH", "IYL"),
+                 "PC": ("PCH", "PCL"), "SP": ("SPH", "SPL"),
+                 "AF'": ("A2", "F2"), "BC'": ("B2", "C2"),
+                 "DE'": ("D2", "E2"), "HL'": ("H2", "L2")}
         if key in pairs and all(part in self.values for part in pairs[key]):
             high, low = pairs[key]
             return (self.values[high] << 8) | self.values[low]
@@ -39,7 +44,8 @@ class RegisterSet:
     def width(self, name: str) -> int:
         key = name.upper()
         self.get(key)
-        return 16 if key in {"AF", "BC", "DE", "HL", "IX", "IY", "SP", "PC", "AF'", "BC'", "DE'", "HL'"} else 8
+        return 16 if key in {"AF", "BC", "DE", "HL", "IX", "IY", "SP", "PC",
+                             "AF'", "BC'", "DE'", "HL'", "AF2", "BC2", "DE2", "HL2"} else 8
 
 
 @dataclass(frozen=True)
@@ -81,9 +87,28 @@ class RemoteBreakpoint:
 
 
 @dataclass(frozen=True)
+class RemoteWatchpoint:
+    id: str
+    access: str
+    start: int
+    end: int
+
+    def __post_init__(self) -> None:
+        if not self.id or self.access not in ("read", "write"):
+            raise ValueError("invalid remote watchpoint")
+        if not 0 <= self.start <= self.end <= 0xFFFF:
+            raise ValueError("invalid watchpoint range")
+
+
+@dataclass(frozen=True)
 class TargetCapabilities:
     persistent: bool = False
     block_read: bool = False
+    conditional_breakpoints: Optional[bool] = None
+    watchpoints: Optional[bool] = None
+    mapping_conditions: Optional[bool] = None
+    memory_write: Optional[bool] = None
+    register_write: Optional[bool] = None
 
 
 class TargetError(Exception):
@@ -120,6 +145,10 @@ class Target(Protocol):
 
     def read_memory(self, address: int, size: int) -> bytes: ...
 
+    def write_memory(self, address: int, data: bytes) -> None: ...
+
+    def write_register(self, name: str, value: int) -> None: ...
+
     def disassemble(self, address: int, count: int) -> Tuple[Instruction, ...]: ...
 
     def read_pages(self) -> Tuple[PageState, ...]: ...
@@ -136,11 +165,18 @@ class Target(Protocol):
 
     def interrupt(self) -> None: ...
 
-    def create_breakpoint(self, address: int) -> str: ...
+    def create_breakpoint(self, address: int, condition: str = "") -> str: ...
 
     def remove_breakpoint(self, remote_id: str) -> None: ...
 
     def list_breakpoints(self) -> Tuple[RemoteBreakpoint, ...]: ...
+
+    def create_watchpoint(self, access: str, start: int, end: int,
+                          condition: str = "") -> str: ...
+
+    def remove_watchpoint(self, remote_id: str) -> None: ...
+
+    def list_watchpoints(self) -> Tuple[RemoteWatchpoint, ...]: ...
 
     def reset(self) -> None: ...
 
@@ -166,6 +202,12 @@ class _UnimplementedTarget:
     def read_memory(self, address: int, size: int) -> bytes:
         self._missing("read_memory")
 
+    def write_memory(self, address: int, data: bytes) -> None:
+        self._missing("write_memory")
+
+    def write_register(self, name: str, value: int) -> None:
+        self._missing("write_register")
+
     def disassemble(self, address: int, count: int) -> Tuple[Instruction, ...]:
         self._missing("disassemble")
 
@@ -190,7 +232,7 @@ class _UnimplementedTarget:
     def interrupt(self) -> None:
         self._missing("interrupt")
 
-    def create_breakpoint(self, address: int) -> str:
+    def create_breakpoint(self, address: int, condition: str = "") -> str:
         self._missing("create_breakpoint")
 
     def remove_breakpoint(self, remote_id: str) -> None:
@@ -198,6 +240,16 @@ class _UnimplementedTarget:
 
     def list_breakpoints(self) -> Tuple[RemoteBreakpoint, ...]:
         self._missing("list_breakpoints")
+
+    def create_watchpoint(self, access: str, start: int, end: int,
+                          condition: str = "") -> str:
+        self._missing("create_watchpoint")
+
+    def remove_watchpoint(self, remote_id: str) -> None:
+        self._missing("remove_watchpoint")
+
+    def list_watchpoints(self) -> Tuple[RemoteWatchpoint, ...]:
+        self._missing("list_watchpoints")
 
     def reset(self) -> None:
         self._missing("reset")
@@ -214,6 +266,6 @@ class _UnimplementedTarget:
 
 __all__ = [
     "ExecutionStatus", "Instruction", "PageState", "RegisterSet",
-    "RemoteBreakpoint", "Target", "TargetCapabilities", "TargetCommandError",
+    "RemoteBreakpoint", "RemoteWatchpoint", "Target", "TargetCapabilities", "TargetCommandError",
     "TargetError", "TargetProtocolError", "TargetTimeout", "TargetUnavailable",
 ]

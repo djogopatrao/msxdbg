@@ -1,0 +1,13 @@
+M:phase8_types
+F:G$phase8_read$0_0$0({2}DF,SI:U),C,0,0,0,0,0
+S:Lphase8_types.phase8_read$index$1_0$6({1}SC:U),B,1,4
+S:Lphase8_types.phase8_read$container$1_0$0({2}DG,ST__00000001:S),R,0,0,[e,d]
+T:Fphase8_types$__00000000[({0}S:S$x$0_0$0({1}SC:U),Z,0,0)({1}S:S$y$0_0$0({2}SI:S),Z,0,0)]
+T:Fphase8_types$__00000001[({0}S:S$points$0_0$0({6}DA2d,ST__00000000:S),Z,0,0)({6}S:S$word_ptr$0_0$0({2}DG,SI:U),Z,0,0)({8}S:S$point_ptr$0_0$0({2}DG,ST__00000000:S),Z,0,0)]
+S:G$phase8_point$0_0$0({3}ST__00000000:S),E,0,0
+S:G$phase8_words$0_0$0({6}DA3d,SI:U),E,0,0
+S:G$phase8_float_zero$0_0$0({4}SF:S),E,0,0
+S:G$phase8_float_one$0_0$0({4}SF:S),E,0,0
+S:G$phase8_float_negative$0_0$0({4}SF:S),E,0,0
+S:G$phase8_container$0_0$0({10}ST__00000001:S),E,0,0
+S:G$phase8_read$0_0$0({2}DF,SI:U),C,0,0

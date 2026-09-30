@@ -99,8 +99,8 @@ Para D07–D10 adicionar arquivo vazio, fim truncado, linha muito longa e regist
 | ID | Função | Casos e resultado esperado |
 | --- | --- | --- |
 | D11 | `ProjectLoader.discover` | **Implementado; testes de descoberta/carga em `tests/test_project_loading.py`.** Ordem estável mesmo com ordem de diretório alterada; None descobre, tupla explícita substitui; lista vazia explícita não dispara descoberta; diretório ausente/arquivo inacessível tem diagnóstico |
-| D12 | `ProjectLoader.load` | **Núcleo MAP/LST/CDB implementado e testado; headers/macros com origem permanecem pendentes e geram diagnóstico explícito.** Imagem simples e FX-MULTI; todos os CDBs reconciliados, inclusive links cruzados; bases majoritárias com avisos, empate sem escolha; ids duplicados falham antes de parsing; tipos e macros têm origem; arquivo essencial ausente falha, struct opcional inválida não invalida projeto |
-| D13 | `read_project_spec` | Após definir esquema: JSON válido/versionado, paths relativos ao manifesto, duplicatas e versão desconhecida; rejeitar opções conflitantes; teste do schema fica pendente até sua definição, sem inventá-lo |
+| D12 | `ProjectLoader.load` | **Implementado e testado para MAP/LST/CDB e fallback explícito de headers/macros.** Imagem simples e FX-MULTI; todos os CDBs reconciliados, inclusive links cruzados; bases majoritárias com avisos, empate sem escolha; ids duplicados falham antes de parsing; tipos e macros têm origem; arquivo essencial ausente falha, struct opcional inválida não invalida projeto |
+| D13 | `read_project_spec` | **Schema JSON v1 implementado.** JSON válido/versionado, paths relativos ao manifesto, duplicatas e versão desconhecida; opções conflitantes rejeitadas antes da conexão |
 
 ### `debuginfo/index.py`
 
@@ -401,17 +401,17 @@ Não criar stubs funcionais ou testes de APIs inexistentes apenas para esta matr
 
 | Requisito | Casos a acrescentar quando contrato estiver definido |
 | --- | --- |
-| F05 | T: reais com aliases/arrays/ponteiros e conflito de layout header/CDB |
-| F06 | *p, &x, a[i], s.f, p->f; tipo correto, erro e endereço versus valor; macro com esses operadores |
+| F05 | T: reais do msxciv/SDCC 4.6.0 com aliases/arrays/ponteiros e conflito de layout header/CDB |
+| F06 | *p, &x, a[i], s.f, p->f; frame atual/caller/global/static, tipo correto, erro, endereço versus valor e macro com esses operadores |
 | F07 | Assinatura ausente/pending/verificada; limite global, cancelamento e nenhuma continuação após match |
 | F08/F09 | Condições false/true, mapper certo/errado, preserve em suspend/resume e disparo filtrado no target |
 | F10 | Read/write/access, faixa/bordas, tamanho inferido/explícito, limpeza de watchpoints próprios |
-| F11 | Áreas HOME/GSINIT/GSFINAL com offsets repetidos e relocação independente |
-| F13 | Mesmo PC em imagens diferentes por segmento; falta de associação mantém ambiguidade |
-| F14/F15 | Alvo parado, ranges/widths, verificação após escrita, parcial/timeout sem retry, snapshot inválido |
-| F16 | Static com base comprovada versus offset sem relocação; nenhum endereço adivinhado |
+| F11 | **Coberto na fase 10:** áreas HOME/GSINIT/GSFINAL com offsets repetidos e relocação independente |
+| F13 | **Coberto na fase 10:** mesmo PC em imagens diferentes por segmento; falta de associação mantém ambiguidade |
+| F14/F15 | **Coberto na fase 10:** alvo parado, ranges/widths, verificação após escrita, timeout sem retry e novo snapshot |
+| F16 | **Coberto na fase 10:** static com base comprovada versus offset sem relocação; nenhum endereço adivinhado |
 
-F01–F04/F12/F17/F18 já estão cobertos pelas matrizes principais. F05 depende de fixtures antes da conclusão. X01/X02 continuam excluídos; testar ausência de efeitos proibidos, não implementar integração para iniciar/gerenciar o emulador.
+F01–F06/F12/F17/F18 estão cobertos pelas matrizes principais e pelas validações das fases 7/8. X01/X02 continuam excluídos; testar ausência de efeitos proibidos, não implementar integração para iniciar/gerenciar o emulador.
 
 ## 12. Pendências de contrato reveladas pelo plano
 

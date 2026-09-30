@@ -5,7 +5,7 @@ import math
 import struct
 from typing import Optional, Tuple, Union
 from msxdbg.debuginfo.index import Project
-from msxdbg.debuginfo.model import Resolution, ResolutionStatus, Storage, TypeDef, TypeId, Variable
+from msxdbg.debuginfo.model import Resolution, ResolutionStatus, TypeDef, TypeId, Variable
 from msxdbg.session.results import LocationResult
 
 @dataclass(frozen=True)
@@ -13,7 +13,7 @@ class ScalarValue: value: object; type_id: TypeId; raw_bytes: bytes
 @dataclass(frozen=True)
 class AddressValue: address: int; referenced_type: Optional[TypeId] = None
 @dataclass(frozen=True)
-class LValue: type_id: TypeId; storage: Storage
+class LValue: type_id: TypeId; location: LocationResult
 @dataclass(frozen=True)
 class StringValue: text: str; nul_terminated: bool; truncated: bool; raw_bytes: bytes
 @dataclass(frozen=True)
@@ -21,7 +21,7 @@ class ArrayValue: items: Tuple["DecodedValue", ...]; truncated: bool = False
 @dataclass(frozen=True)
 class StructValue: fields: Tuple[Tuple[str, "DecodedValue"], ...]
 
-DecodedValue = Union[ScalarValue, StringValue, ArrayValue, StructValue]
+DecodedValue = Union[AddressValue, ScalarValue, StringValue, ArrayValue, StructValue]
 
 @dataclass(frozen=True)
 class ValueLimits:

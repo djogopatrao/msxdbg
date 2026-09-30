@@ -108,7 +108,7 @@ def parse_macro_definitions(
         logical_lines.append((pending_line, pending))
 
     conditional_depth = 0
-    token_pattern = re.compile(r"0[xX][0-9A-Fa-f]+|#[0-9A-Fa-f]+|[A-Za-z_]\w*|\d+|<<|>>|[-+*/%&|^~(),\[\]]")
+    token_pattern = re.compile(r"0[xX][0-9A-Fa-f]+|#[0-9A-Fa-f]+|[A-Za-z_]\w*|\d+|->|<<|>>|[-+*/%&|^~().,\[\]]")
     for line_number, line in logical_lines:
         directive = re.match(r"^\s*#\s*(\w+)", line)
         if directive and directive.group(1) in ("if", "ifdef", "ifndef"):

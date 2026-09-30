@@ -52,7 +52,10 @@ def test_batch_end_to_end_breakpoint_step_queries_json_and_cleanup():
     assert lines[0]["data"] == {
         "operation": "created",
         "breakpoint": {"number": 1, "address": 0x200, "status": "active",
-                       "remote_id": "bp_id_0001", "location": None},
+                       "remote_id": "bp_id_0001", "location": None,
+                       "condition": None, "point_kind": "breakpoint",
+                       "access": None, "size": 1,
+                       "remote_ids": ["bp_id_0001"], "qualifier": None},
     }
     assert lines[1]["data"]["breakpoints"][0]["number"] == 1
     assert lines[2]["data"]["pc"] == 0x101

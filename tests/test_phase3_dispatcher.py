@@ -62,7 +62,7 @@ def test_dispatch_recognizes_loaded_struct_type_at_end_of_print():
 
 def test_complete_registry_metadata_and_handler_failures_are_structured():
     registry = build_registry()
-    assert len(registry.specifications()) == 24
+    assert len(registry.specifications()) == 26
     assert registry.lookup("b") is registry.lookup("break")
     assert registry.lookup("disable") is registry.lookup("suspend")
     assert registry.lookup("disas") is registry.lookup("disassemble")

@@ -22,6 +22,9 @@ from .model import (
 )
 
 
+CODE_AREAS = frozenset(("_CODE", "_HOME", "_GSINIT", "_GSFINAL"))
+
+
 @dataclass(frozen=True)
 class LineMatch:
     requested_line: int
@@ -41,6 +44,23 @@ class SymbolContext:
     module: Optional[ModuleId]
     function: Optional[FunctionId]
     pc: int
+
+
+@dataclass(frozen=True)
+class ImageMapping:
+    image: ImageId
+    page: int
+    primary_slot: str
+    secondary_slot: Optional[str] = None
+    segment: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.page not in (0, 1, 2, 3):
+            raise ValueError("mapping page must be between 0 and 3")
+        if self.primary_slot not in ("0", "1", "2", "3"):
+            raise ValueError("mapping primary slot must be 0..3")
+        if self.secondary_slot is not None and self.secondary_slot not in ("0", "1", "2", "3", "X"):
+            raise ValueError("mapping secondary slot must be 0..3 or X")
 
 
 class VariableKind:
@@ -65,11 +85,26 @@ class Project:
     """Read-only query facade over all loaded images."""
 
     images: Tuple[Image, ...]
+    mappings: Tuple[ImageMapping, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "images", tuple(self.images))
+        object.__setattr__(self, "mappings", tuple(self.mappings))
         if len({item.id for item in self.images}) != len(self.images):
             raise ValueError("duplicate image ids")
+        if any(item.image not in {image.id for image in self.images} for item in self.mappings):
+            raise ValueError("mapping refers to an unknown image")
+
+    def image_for_pages(self, pages, address: int) -> Optional[ImageId]:
+        page = address // 0x4000
+        observed = next((item for item in pages if item.page == page), None)
+        if observed is None:
+            return None
+        matches = {item.image for item in self.mappings
+                   if item.page == page and item.primary_slot == observed.primary_slot
+                   and (item.secondary_slot is None or item.secondary_slot == observed.secondary_slot)
+                   and (item.segment is None or item.segment == observed.segment)}
+        return next(iter(matches)) if len(matches) == 1 else None
 
     def _images(self, image):
         return tuple(item for item in self.images if image is None or item.id == image)
@@ -113,7 +148,7 @@ class Project:
         functions = self.function_at(address, image).candidates
         for item in self._images(image):
             for module in item.modules:
-                areas = [a for a in module.areas if a.name == "_CODE" and a.base is not None
+                areas = [a for a in module.areas if a.name in CODE_AREAS and a.base is not None
                          and a.limit is not None and a.base <= address < a.limit]
                 owned = [f for f in functions if f.id.module == module.id]
                 if not areas and not owned:
@@ -131,7 +166,9 @@ class Project:
                         evidence += function.evidence
                     if source:
                         evidence += source.evidence
-                    candidates.append(CodeLocation(item.id, address, module.id, "_CODE",
+                    area_name = areas[0].name if areas else next(
+                        (x.area for x in locations if x.address == address), "_CODE")
+                    candidates.append(CodeLocation(item.id, address, module.id, area_name,
                         address - base, source.source if source else None,
                         function.id if function else None, evidence))
         if not candidates:
@@ -165,10 +202,25 @@ class Project:
     def lookup_symbol(
         self, name: str, image: Optional[ImageId] = None
     ) -> Resolution[Symbol]:
-        symbols = [s for item in self._images(image) for s in item.symbols]
+        symbols = []
+        seen = set()
+        for item in self._images(image):
+            for symbol in item.symbols + tuple(s for m in item.modules for s in m.labels):
+                key = (symbol.name, symbol.address, symbol.module)
+                if key not in seen:
+                    seen.add(key)
+                    symbols.append(symbol)
         exact = [s for s in symbols if s.name == name]
         aliases = [s for s in symbols if s.name.startswith("_") and s.name[1:] == name]
         return self._result(exact or aliases, image)
+
+    def is_listing_only_symbol(self, symbol: Symbol) -> bool:
+        image = next((item for item in self.images if item.id == symbol.module.image), None) \
+            if symbol.module is not None else None
+        if image is None:
+            return False
+        return not any((item.name, item.address, item.module) ==
+                       (symbol.name, symbol.address, symbol.module) for item in image.symbols)
 
     def nearest_symbol(
         self, address: int, image: Optional[ImageId] = None

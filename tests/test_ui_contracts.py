@@ -14,7 +14,7 @@ class UiContractTests(unittest.TestCase):
 
     def test_complete_registry_and_target_parser_are_available(self) -> None:
         registry = build_registry()
-        self.assertEqual(24, len(registry.specifications()))
+        self.assertEqual(26, len(registry.specifications()))
         self.assertEqual("print", registry.lookup("?").name)
         self.assertEqual("until", registry.lookup("advance").name)
         self.assertEqual("quit", registry.lookup("q").name)

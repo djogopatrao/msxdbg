@@ -13,6 +13,8 @@ from msxdbg.eval.tokens import ExpressionSyntaxError
 from msxdbg.eval.macros import MacroExpansionError
 from msxdbg.session.core import Session
 from msxdbg.session.execution import ExecutionKind, ExecutionRequest
+from msxdbg.session.conditions import ConditionCompiler, compile_mapping_qualifier
+from msxdbg.session.breakpoints import MappingQualifier
 from msxdbg.session.results import ResolvedTarget, TargetQuery
 from msxdbg.session.safety import DangerousAction, InteractiveEntry
 from msxdbg.session.state import StepMode
@@ -62,8 +64,34 @@ class NoArguments:
     pass
 
 @dataclass(frozen=True)
+class ContinueArguments:
+    until_signature: bool = False
+
+@dataclass(frozen=True)
 class TargetArguments:
     target: TargetQuery
+
+@dataclass(frozen=True)
+class BreakArguments:
+    target: TargetQuery
+    condition: Optional[str] = None
+    qualifier: Optional[MappingQualifier] = None
+
+@dataclass(frozen=True)
+class WatchArguments:
+    access: str
+    target: TargetQuery
+    size: int
+
+@dataclass(frozen=True)
+class WriteMemoryArguments:
+    target: TargetQuery
+    data: bytes
+
+@dataclass(frozen=True)
+class WriteRegisterArguments:
+    name: str
+    value: int
 
 @dataclass(frozen=True)
 class BreakpointNumberArguments:
@@ -147,6 +175,12 @@ def _parse_no_arguments(command: str, text: str):
         raise ValueError(f"{command} does not accept arguments")
     return NoArguments()
 
+def _parse_continue(text: str) -> ContinueArguments:
+    value = text.strip()
+    if value not in ("", "--until-signature"):
+        raise ValueError("continue accepts only --until-signature")
+    return ContinueArguments(value == "--until-signature")
+
 def _parse_frame(text: str) -> FrameArguments:
     text = text.strip()
     if not text:
@@ -159,6 +193,82 @@ def _parse_target_arguments(command: str, text: str) -> TargetArguments:
     if not text.strip():
         raise ValueError(f"{command} requires a target")
     return TargetArguments(parse_target(text))
+
+def _parse_break(text: str) -> BreakArguments:
+    pieces=text.split()
+    if not pieces: raise ValueError("break requires a target")
+    target=parse_target(pieces[0]); condition_tokens=[]
+    page=primary=secondary=segment=None; index=1; in_condition=False
+    while index < len(pieces):
+        token=pieces[index]
+        if token == "if":
+            if in_condition: raise ValueError("break accepts only one condition")
+            in_condition=True; index+=1; continue
+        if token in ("page","slot","segment"):
+            if index+1 >= len(pieces): raise ValueError(f"{token} requires a value")
+            value=pieces[index+1]
+            if token == "page":
+                if page is not None or not value.isdecimal(): raise ValueError("invalid page qualifier")
+                page=int(value)
+            elif token == "segment":
+                if segment is not None:
+                    raise ValueError("duplicate segment qualifier")
+                try: segment=int(value,0)
+                except ValueError: raise ValueError("invalid segment qualifier") from None
+            else:
+                if primary is not None: raise ValueError("duplicate slot qualifier")
+                fields=value.split(".")
+                if len(fields) not in (1,2) or any(not item.isdecimal() for item in fields):
+                    raise ValueError("slot expects P or P.S")
+                primary=int(fields[0]); secondary=int(fields[1]) if len(fields)==2 else None
+            index+=2; continue
+        if not in_condition:
+            raise ValueError(f"unexpected break option: {token}")
+        condition_tokens.append(token); index+=1
+    if in_condition and not condition_tokens: raise ValueError("break condition must not be empty")
+    qualifier=(MappingQualifier(page,primary,secondary,segment)
+               if any(item is not None for item in (page,primary,secondary,segment)) else None)
+    return BreakArguments(target," ".join(condition_tokens) if in_condition else None,qualifier)
+
+def _parse_watch(text: str) -> WatchArguments:
+    pieces=text.split()
+    if len(pieces) != 3 or pieces[0] not in ("read","write","access"):
+        raise ValueError("watch expects read|write|access ADDRESS SIZE")
+    try: size=int(pieces[2],0)
+    except ValueError: raise ValueError("watch size must be a positive integer") from None
+    if size < 1: raise ValueError("watch size must be a positive integer")
+    return WatchArguments(pieces[0],parse_target(pieces[1]),size)
+
+def _parse_write(text: str):
+    pieces = text.split()
+    if not pieces:
+        raise ValueError("write expects memory or register")
+    if pieces[0] == "register":
+        if len(pieces) != 3:
+            raise ValueError("write register expects NAME VALUE")
+        try: value = int(pieces[2], 0)
+        except ValueError: raise ValueError("register value must be an integer") from None
+        return WriteRegisterArguments(pieces[1], value)
+    if pieces[0] != "memory" or len(pieces) not in (3, 4, 5):
+        raise ValueError("write memory expects TARGET HEXBYTES or TARGET VALUE u8|u16|u32 [little|big]")
+    target = parse_target(pieces[1])
+    if len(pieces) == 3:
+        encoded = pieces[2].removeprefix("0x").removeprefix("0X")
+        if not encoded or len(encoded) % 2 or re.fullmatch(r"[0-9A-Fa-f]+", encoded) is None:
+            raise ValueError("memory bytes must contain complete hexadecimal byte pairs")
+        return WriteMemoryArguments(target, bytes.fromhex(encoded))
+    types = {"u8": 1, "u16": 2, "u32": 4}
+    if pieces[3] not in types:
+        raise ValueError("memory scalar type must be u8, u16, or u32")
+    endian = pieces[4] if len(pieces) == 5 else "little"
+    if endian not in ("little", "big"):
+        raise ValueError("endianness must be little or big")
+    try: value = int(pieces[2], 0)
+    except ValueError: raise ValueError("memory value must be an integer") from None
+    width = types[pieces[3]]
+    if not 0 <= value < (1 << (width * 8)):
+        raise ValueError("memory value is outside its declared width")
+    return WriteMemoryArguments(target, value.to_bytes(width, endian))
 
 def _parse_breakpoint_number(command: str, text: str) -> BreakpointNumberArguments:
     value = text.strip()
@@ -218,15 +328,22 @@ def build_registry() -> CommandRegistry:
         registry.register(CommandSpec(name, aliases, help_text, syntax, repeatable,
             confirmation, parser, handler, completer))
     add("break", ("b",), "Create a breakpoint", "break TARGET", True, None,
-        lambda text: _parse_target_arguments("break", text), handle_break, _target_completion)
+        _parse_break, handle_break, _target_completion)
+    add("watch", (), "Create a memory watchpoint",
+        "watch read|write|access ADDRESS SIZE", True, None,
+        _parse_watch, handle_watch, _target_completion)
+    add("write", (), "Write memory or a CPU register",
+        "write memory TARGET HEXBYTES|VALUE TYPE [ENDIAN] | write register NAME VALUE",
+        True, None, _parse_write, handle_write, _target_completion)
     add("delete", ("d",), "Delete a breakpoint", "delete N", True, None,
         lambda text: _parse_breakpoint_number("delete", text), handle_delete)
     add("suspend", ("disable",), "Suspend a breakpoint", "suspend N", True, None,
         lambda text: _parse_breakpoint_number("suspend", text), handle_suspend)
     add("resume", ("enable",), "Resume a breakpoint", "resume N", True, None,
         lambda text: _parse_breakpoint_number("resume", text), handle_resume)
-    for name, aliases, handler in (("continue", ("c",), handle_continue),
-            ("step", ("s",), handle_step), ("next", ("n",), handle_next),
+    add("continue", ("c",), "Continue execution", "continue [--until-signature]",
+        True, None, _parse_continue, handle_continue)
+    for name, aliases, handler in (("step", ("s",), handle_step), ("next", ("n",), handle_next),
             ("stepi", ("si",), handle_stepi), ("finish", (), handle_finish),
             ("where", (), handle_where)):
         add(name, aliases, f"Execute {name}", name, True, None,
@@ -352,13 +469,64 @@ def _resolved_target(command: str, query: TargetQuery, context: CommandContext):
     return resolution.unique_or_none(), None
 
 def handle_break(arguments: CommandArguments, context: CommandContext) -> CommandResult:
-    if not isinstance(arguments, TargetArguments): return _argument_error("break", "invalid target")
+    if isinstance(arguments, TargetArguments):
+        arguments = BreakArguments(arguments.target)
+    if not isinstance(arguments, BreakArguments): return _argument_error("break", "invalid target")
     try:
         target, error = _resolved_target("break", arguments.target, context)
         if error: return error
-        record = context.session.add_breakpoint(target)
+        qualifier=arguments.qualifier
+        if qualifier is not None and qualifier.page is None:
+            qualifier=MappingQualifier(target.address // 0x4000,
+                qualifier.primary_slot,qualifier.secondary_slot,qualifier.segment)
+        compiled = (ConditionCompiler(context.project).compile(arguments.condition)
+                    if arguments.condition is not None else None)
+        predicates=[]
+        if compiled is not None: predicates.append(f"({compiled.tcl_expression})")
+        if qualifier is not None: predicates.append(compile_mapping_qualifier(qualifier))
+        remote_condition=" && ".join(item for item in predicates if item)
+        record = context.session.add_breakpoint(target, arguments.condition,
+            remote_condition or None,qualifier)
         return CommandResult("break", True, payload=BreakpointPayload(record, "created"))
     except Exception as error: return _session_error("break", error)
+
+def handle_watch(arguments: CommandArguments, context: CommandContext) -> CommandResult:
+    if not isinstance(arguments, WatchArguments):
+        return _argument_error("watch", "invalid watchpoint")
+    try:
+        target,error=_resolved_target("watch",arguments.target,context)
+        if error: return error
+        if target.address + arguments.size > 0x10000:
+            return _argument_error("watch", "watchpoint range is outside CPU memory")
+        record=context.session.add_watchpoint(arguments.access,target.address,arguments.size)
+        return CommandResult("watch",True,payload=BreakpointPayload(record,"created"))
+    except Exception as error: return _session_error("watch",error)
+
+def handle_write(arguments: CommandArguments, context: CommandContext) -> CommandResult:
+    try:
+        if isinstance(arguments, WriteMemoryArguments):
+            target,error=_resolved_target("write",arguments.target,context)
+            if error: return error
+            result=context.session.write_memory(target.address,arguments.data)
+            if not result.verified:
+                return CommandResult("write",False,error=CommandError(
+                    "write-verification-failed", "memory differs after write",
+                    {"address": result.address, "requested": result.requested.hex(),
+                     "observed": result.observed.hex()}))
+            return CommandResult("write",True,payload=MessagePayload(
+                f"wrote {len(result.requested)} byte(s) at {result.address:#06x}; verified"))
+        if isinstance(arguments, WriteRegisterArguments):
+            result=context.session.write_register(arguments.name,arguments.value)
+            if result.requested != result.observed:
+                return CommandResult("write",False,error=CommandError(
+                    "write-verification-failed", "register differs after write",
+                    {"register": result.name, "requested": result.requested,
+                     "observed": result.observed}))
+            return CommandResult("write",True,payload=MessagePayload(
+                f"{result.name} = {result.observed:#x}; verified"))
+        return _argument_error("write", "invalid write arguments")
+    except Exception as error:
+        return _session_error("write",error)
 
 def _breakpoint_operation(command, arguments, context, operation):
     if not isinstance(arguments, BreakpointNumberArguments):
@@ -385,7 +553,17 @@ def _execute(command, kind, arguments, context, address=None, mode=StepMode.SOUR
         return CommandResult(command, True, payload=StopPayload(result))
     except Exception as error: return _session_error(command, error)
 
-def handle_continue(arguments, context): return _execute("continue", ExecutionKind.CONTINUE, arguments, context)
+def handle_continue(arguments, context):
+    if not isinstance(arguments, ContinueArguments):
+        return _argument_error("continue", "invalid continue arguments")
+    if not arguments.until_signature:
+        return _execute("continue", ExecutionKind.CONTINUE, NoArguments(), context)
+    try:
+        result = context.session.continue_until_signature(
+            context.execution_timeout, context.cancellation or _NeverCancelled())
+        return CommandResult("continue", True, payload=StopPayload(result))
+    except Exception as error:
+        return _session_error("continue", error)
 def handle_step(arguments, context): return _execute("step", ExecutionKind.STEP, arguments, context)
 def handle_next(arguments, context): return _execute("next", ExecutionKind.NEXT, arguments, context)
 def handle_stepi(arguments, context): return _execute("stepi", ExecutionKind.STEPI, arguments, context, mode=StepMode.ASSEMBLY)
@@ -575,13 +753,19 @@ def _evaluation_error(command: str, error: Exception) -> CommandResult:
                          error=CommandError(code, str(error), details))
 
 def _session_error(command: str, error: Exception) -> CommandResult:
+    details = {"error_type": type(error).__name__}
+    if hasattr(error, "outcome_unknown"):
+        details["outcome_unknown"] = bool(error.outcome_unknown)
+    if hasattr(error, "operation"):
+        details["operation"] = error.operation
     return CommandResult(command, False, error=CommandError(
-        "session", str(error), {"error_type": type(error).__name__}
+        "session", str(error), details
     ))
 
 __all__ = ["BreakpointNumberArguments", "CommandContext", "CommandDispatcher",
            "ConfirmationArguments", "DisassembleArguments", "DisassemblyCursor",
            "FrameArguments", "InfoArguments", "ListArguments", "ModeArguments",
            "NavigationState", "NoArguments", "PrintArguments", "SourceCursor",
-           "TargetArguments", "build_registry", "handle_backtrace", "handle_frame",
+           "TargetArguments", "WriteMemoryArguments", "WriteRegisterArguments",
+           "build_registry", "handle_backtrace", "handle_frame",
            "handle_info", "handle_print", "parse_target"]

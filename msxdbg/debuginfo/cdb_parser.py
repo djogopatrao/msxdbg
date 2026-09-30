@@ -21,7 +21,7 @@ _DECLARATION = re.compile(r"([^()]+)\(\{([0-9]+)\}([^()]+)\),(.*)")
 _STORAGE = re.compile(r"([A-Z]),([01]),(-?[0-9]+)(?:,\[([^\[\]]*)\](?:,([A-Z]),([01]),(-?[0-9]+))?)?")
 _TYPE = re.compile(r"F([^$\[\]]+)\$([^$\[\]]+)\[(.*)\]")
 _MEMBER = re.compile(r"\(\{([0-9]+)\}S:([^()]+\([^()]+\),[^()]*)\)")
-_MEMBER_TYPE_TOKEN = re.compile(r"(?:D[GCXDPIF]|DA[0-9]+|S[LICSVF]|ST[^,:()]+)")
+_MEMBER_TYPE_TOKEN = re.compile(r"(?:D[GCXDPIF]|DA[0-9]+d?|S[LICSVF]|ST[^,:()]+)")
 _HEX = re.compile(r"[0-9a-fA-F]+")
 
 

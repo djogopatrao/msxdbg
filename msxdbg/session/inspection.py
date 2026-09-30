@@ -39,6 +39,11 @@ class StopInspectionContext:
         return self._snapshot.registers
 
     @property
+    def signature_status(self) -> str:
+        self.validate()
+        return self._snapshot.signature_status
+
+    @property
     def symbol_context(self) -> SymbolContext:
         self.validate()
         location = self._frame.function.unique_or_none()

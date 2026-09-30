@@ -17,12 +17,39 @@ class BreakpointStatus:
 
 
 @dataclass(frozen=True)
+class MappingQualifier:
+    page: Optional[int] = None
+    primary_slot: Optional[int] = None
+    secondary_slot: Optional[int] = None
+    segment: Optional[int] = None
+
+    def __post_init__(self):
+        if self.page is not None and self.page not in (0,1,2,3):
+            raise ValueError("page must be between 0 and 3")
+        for value in (self.primary_slot,self.secondary_slot):
+            if value is not None and value not in (0,1,2,3):
+                raise ValueError("slot must be between 0 and 3")
+        if self.secondary_slot is not None and self.primary_slot is None:
+            raise ValueError("secondary slot requires a primary slot")
+        if self.segment is not None and self.segment < 0:
+            raise ValueError("segment must be non-negative")
+        if self.segment is not None and self.page is None:
+            raise ValueError("segment qualifier requires page")
+
+
+@dataclass(frozen=True)
 class BreakpointRecord:
     number: int
     address: int
     location: Optional[CodeLocation]
     remote_id: Optional[str]
     status: str = BreakpointStatus.ACTIVE
+    condition: Optional[str] = None
+    kind: str = "breakpoint"
+    access: Optional[str] = None
+    size: int = 1
+    remote_ids: Tuple[str, ...] = ()
+    qualifier: Optional[MappingQualifier] = None
 
 
 @dataclass
@@ -32,9 +59,19 @@ class _BreakpointContext:
     location: Optional[CodeLocation]
     remote_id: Optional[str] = None
     status: str = BreakpointStatus.UNKNOWN
+    condition: Optional[str] = None
+    kind: str = "breakpoint"
+    access: Optional[str] = None
+    size: int = 1
+    remote_ids: Tuple[str, ...] = ()
+    remote_condition: Optional[str] = None
+    qualifier: Optional[MappingQualifier] = None
 
     def record(self) -> BreakpointRecord:
-        return BreakpointRecord(self.number, self.address, self.location, self.remote_id, self.status)
+        ids = self.remote_ids or ((self.remote_id,) if self.remote_id else ())
+        return BreakpointRecord(self.number, self.address, self.location, self.remote_id,
+                                self.status, self.condition, self.kind, self.access,
+                                self.size, ids, self.qualifier)
 
 
 class BreakpointManager:
@@ -43,12 +80,19 @@ class BreakpointManager:
         self._breakpoints: Dict[int, _BreakpointContext] = {}
         self._next_number = 1
 
-    def create(self, target: ResolvedTarget) -> BreakpointRecord:
+    def create(self, target: ResolvedTarget, condition: Optional[str] = None,
+               remote_condition: Optional[str] = None,
+               qualifier: Optional[MappingQualifier] = None) -> BreakpointRecord:
         number = self._next_number
         self._next_number += 1
-        context = _BreakpointContext(number, target.address, target.location.unique_or_none())
+        context = _BreakpointContext(number, target.address, target.location.unique_or_none(),
+                                     condition=condition,
+                                     remote_condition=remote_condition or condition,
+                                     qualifier=qualifier)
         try:
-            context.remote_id = self._remote.create_breakpoint(target.address)
+            compiled=context.remote_condition
+            context.remote_id = (self._remote.create_breakpoint(target.address, compiled)
+                                 if compiled else self._remote.create_breakpoint(target.address))
         except TargetError as error:
             if error.outcome_unknown:
                 self._breakpoints[number] = context
@@ -57,11 +101,44 @@ class BreakpointManager:
         self._breakpoints[number] = context
         return context.record()
 
+    def create_watchpoint(self, access: str, address: int, size: int,
+                          condition: Optional[str] = None) -> BreakpointRecord:
+        if access not in ("read", "write", "access"):
+            raise ValueError("watch access must be read, write, or access")
+        if size < 1 or address < 0 or address + size > 0x10000:
+            raise ValueError("watchpoint range is outside CPU memory")
+        number=self._next_number; self._next_number+=1
+        context=_BreakpointContext(number,address,None,status=BreakpointStatus.UNKNOWN,
+            condition=condition,kind="watchpoint",access=access,size=size)
+        created=[]
+        try:
+            for mode in (("read","write") if access == "access" else (access,)):
+                created.append(self._remote.create_watchpoint(
+                    mode,address,address+size-1,condition or ""))
+        except TargetError as error:
+            context.remote_ids=tuple(created); context.remote_id=created[0] if created else None
+            if error.outcome_unknown or created: self._breakpoints[number]=context
+            raise
+        context.remote_ids=tuple(created); context.remote_id=created[0]
+        context.status=BreakpointStatus.ACTIVE; self._breakpoints[number]=context
+        return context.record()
+
+    def _remove_remote(self, context):
+        ids=context.remote_ids or ((context.remote_id,) if context.remote_id else ())
+        first_error=None
+        for remote_id in ids:
+            try:
+                if context.kind == "watchpoint": self._remote.remove_watchpoint(remote_id)
+                else: self._remote.remove_breakpoint(remote_id)
+            except Exception as error:
+                if first_error is None: first_error=error
+        if first_error is not None: raise first_error
+
     def delete(self, number: int) -> None:
         context = self._require(number)
         if context.remote_id is not None:
             try:
-                self._remote.remove_breakpoint(context.remote_id)
+                self._remove_remote(context)
             except TargetError as error:
                 if error.outcome_unknown:
                     context.status = BreakpointStatus.UNKNOWN
@@ -73,12 +150,13 @@ class BreakpointManager:
         if context.status == BreakpointStatus.SUSPENDED or context.remote_id is None:
             return context.record()
         try:
-            self._remote.remove_breakpoint(context.remote_id)
+            self._remove_remote(context)
         except TargetError as error:
             if error.outcome_unknown:
                 context.status = BreakpointStatus.UNKNOWN
             raise
         context.remote_id = None
+        context.remote_ids = ()
         context.status = BreakpointStatus.SUSPENDED
         return context.record()
 
@@ -87,7 +165,14 @@ class BreakpointManager:
         if context.status in (BreakpointStatus.ACTIVE, BreakpointStatus.UNKNOWN):
             return context.record()
         try:
-            remote_id = self._remote.create_breakpoint(context.address)
+            if context.kind == "watchpoint":
+                modes=("read","write") if context.access == "access" else (context.access,)
+                ids=tuple(self._remote.create_watchpoint(mode,context.address,
+                    context.address+context.size-1,context.condition or "") for mode in modes)
+                remote_id=ids[0]; context.remote_ids=ids
+            else:
+                remote_id = (self._remote.create_breakpoint(context.address, context.remote_condition)
+                             if context.remote_condition else self._remote.create_breakpoint(context.address))
         except TargetError as error:
             if error.outcome_unknown:
                 context.status = BreakpointStatus.UNKNOWN
@@ -104,11 +189,16 @@ class BreakpointManager:
                      if ctx.address == address and ctx.status == BreakpointStatus.ACTIVE)
 
     def reconcile(self) -> Tuple[BreakpointRecord, ...]:
-        remote_ids = {breakpoint.id for breakpoint in self._remote.list_breakpoints()}
+        breakpoint_ids = {breakpoint.id for breakpoint in self._remote.list_breakpoints()}
+        watchpoint_ids = ({watchpoint.id for watchpoint in self._remote.list_watchpoints()}
+                          if any(item.kind == "watchpoint" for item in self._breakpoints.values())
+                          else set())
         for context in self._breakpoints.values():
             if context.remote_id is None:
                 continue
-            if context.remote_id in remote_ids:
+            expected=set(context.remote_ids or (context.remote_id,))
+            remote_ids=watchpoint_ids if context.kind == "watchpoint" else breakpoint_ids
+            if expected and expected <= remote_ids:
                 context.status = BreakpointStatus.ACTIVE
             else:
                 context.remote_id = None
@@ -129,7 +219,7 @@ class BreakpointManager:
                     del self._breakpoints[number]
                 continue
             try:
-                self._remote.remove_breakpoint(context.remote_id)
+                self._remove_remote(context)
             except Exception as error:
                 pending_ids.append(context.remote_id)
                 errors.append(f"cleanup local #{number} remote {context.remote_id!r}: "
@@ -149,4 +239,4 @@ class BreakpointManager:
             raise ValueError(f"local breakpoint #{number} does not exist") from None
 
 
-__all__ = ["BreakpointManager", "BreakpointRecord", "BreakpointStatus"]
+__all__ = ["BreakpointManager", "BreakpointRecord", "BreakpointStatus", "MappingQualifier"]

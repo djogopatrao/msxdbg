@@ -260,12 +260,12 @@ def test_types_have_provenance_and_cycles_fail_independently(tmp_path):
     assert any(d.code == 'load.invalid-type' for d in loaded.diagnostics)
 
 
-def test_optional_headers_are_explicitly_unavailable_without_breaking_code(tmp_path):
+def test_missing_optional_headers_are_diagnostic_without_breaking_code(tmp_path):
     write_module(tmp_path, 'main', 0x8000)
     spec = ProjectSpec((ImageSpec(ImageId('resident'), tmp_path),), struct_headers=(tmp_path / 'types.h',))
     loaded = ProjectLoader().load(spec)
     assert loaded.project.resolve(0x8000).status == 'unique'
-    assert any(d.code == 'load.headers-unavailable' for d in loaded.diagnostics)
+    assert any(d.code == 'load.header-unreadable' for d in loaded.diagnostics)
 
 
 def test_invalid_query_arguments():
@@ -316,7 +316,7 @@ def test_relocation_overflow_is_diagnostic_and_does_not_wrap(tmp_path):
     assert loaded.project.resolve_line('main.c', 11).status == 'missing'
 
 
-def test_known_home_function_and_lines_stay_unsupported(tmp_path):
+def test_known_home_function_and_lines_are_resolved(tmp_path):
     write_module(tmp_path, 'main', 0x8000)
     with (tmp_path / 'main.lst').open('a') as stream:
         stream.write('\n' + lst('_init:', 0) + '\n')
@@ -328,9 +328,61 @@ def test_known_home_function_and_lines_stay_unsupported(tmp_path):
         'L:C$init.c$1$1$1:7000',
     ]))
     project = load(tmp_path).project
-    assert project.function_at(0x7000).status == 'missing'
-    assert project.resolve(0x7000).status == 'missing'
-    assert project.resolve_line('init.c', 1).status == 'missing'
+    assert project.function_at(0x7000).status == 'unique'
+    location = project.resolve(0x7000).unique_or_none()
+    assert location is not None and location.area == '_HOME'
+    assert project.resolve_line('init.c', 1).unique_or_none().location.area == '_HOME'
+
+
+def test_additional_code_areas_relocate_independently(tmp_path):
+    root = tmp_path
+    rows = [lst('.module init')]
+    for area, symbol, source in (("_HOME", "_home", "home.c"),
+                                 ("_GSINIT", "_init", "init.c"),
+                                 ("_GSFINAL", "_final", "final.c")):
+        rows += [lst('.area ' + area), lst('.globl ' + symbol), lst(symbol + ':', 0),
+                 lst(f';{source}:1: code'), lst('nop', 0)]
+    (root / 'init.lst').write_text('\n'.join(rows))
+    (root / 'init.map').write_text('\n'.join([
+        'Value Global', '00004000 _home init', '00005000 _init init',
+        '00006000 _final init']))
+    project = load(root).project
+    assert [(project.resolve(address).unique_or_none().area,
+             project.resolve(address).unique_or_none().offset)
+            for address in (0x4000, 0x5000, 0x6000)] == [
+                ('_HOME', 0), ('_GSINIT', 0), ('_GSFINAL', 0)]
+
+
+def test_static_listing_label_without_cdb_is_exposed_only_with_proven_relocation(tmp_path):
+    write_module(tmp_path, 'main', 0x8000)
+    with (tmp_path / 'main.lst').open('a') as stream:
+        stream.write('\n' + lst('.area _CODE') + '\n' + lst('_helper:', 0x20))
+    project = load(tmp_path).project
+    helper = project.lookup_symbol('_helper').unique_or_none()
+    assert helper is not None and helper.address == 0x8020
+
+    other = tmp_path / 'unproven'; other.mkdir()
+    (other / 'orphan.lst').write_text('\n'.join([
+        lst('.module orphan'), lst('.area _HOME'), lst('_hidden:', 3)]))
+    (other / 'orphan.map').write_text('Value Global\n00008000 _unrelated elsewhere')
+    unresolved = load(other).project
+    assert unresolved.lookup_symbol('_hidden').status == 'missing'
+
+
+def test_manifest_parses_explicit_image_mapping(tmp_path):
+    import json
+    root = tmp_path / 'out'; write_module(root, 'main', 0x8000)
+    manifest = tmp_path / 'project.json'
+    manifest.write_text(json.dumps({
+        'version': 1,
+        'images': [{'id': 'overlay', 'out': 'out', 'mappings': [
+            {'page': 2, 'slot': '1.2', 'segment': 7}]}],
+    }))
+    from msxdbg.debuginfo.loader import read_project_spec
+    loaded = ProjectLoader().load(read_project_spec(manifest))
+    mapping = loaded.project.mappings[0]
+    assert (mapping.image.value, mapping.page, mapping.primary_slot,
+            mapping.secondary_slot, mapping.segment) == ('overlay', 2, '1', '2', '7')
 
 
 def test_cdb_symbol_identity_never_becomes_a_function(tmp_path):

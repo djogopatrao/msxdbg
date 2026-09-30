@@ -20,9 +20,15 @@ class Indirect(Expr): address: Expr; type_name: str
 @dataclass(frozen=True)
 class Index(Expr): expression: Expr; index: Expr
 @dataclass(frozen=True)
+class Dereference(Expr): expression: Expr
+@dataclass(frozen=True)
+class AddressOf(Expr): expression: Expr
+@dataclass(frozen=True)
+class Member(Expr): expression: Expr; name: str; through_pointer: bool = False
+@dataclass(frozen=True)
 class BuiltinCall(Expr):
     name: str
     arguments: Tuple[Expr, ...]
     def __post_init__(self) -> None: object.__setattr__(self, "arguments", tuple(self.arguments))
 
-__all__ = ["Binary", "BuiltinCall", "Expr", "Group", "Index", "Indirect", "Name", "Number", "Unary"]
+__all__ = ["AddressOf", "Binary", "BuiltinCall", "Dereference", "Expr", "Group", "Index", "Indirect", "Member", "Name", "Number", "Unary"]
