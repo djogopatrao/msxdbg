@@ -1,0 +1,56 @@
+{
+  "registers": {
+    "PC": 4360,
+    "SP": 36848,
+    "IX": 36864
+  },
+  "functions": [
+    {"name": "leaf", "entry": 4352, "end": 4384},
+    {"name": "middle", "entry": 4608, "end": 4640},
+    {"name": "root", "entry": 4864, "end": 4896},
+    {"name": "frameless", "entry": 5120, "end": 5136}
+  ],
+  "instructions": [
+    {"address": 4352, "bytes": "dde5", "text": "push ix"},
+    {"address": 4354, "bytes": "dd210000", "text": "ld ix,#0"},
+    {"address": 4358, "bytes": "dd39", "text": "add ix,sp"},
+    {"address": 4360, "bytes": "00", "text": "nop"},
+    {"address": 4376, "bytes": "dde1", "text": "pop ix"},
+    {"address": 4608, "bytes": "dde5", "text": "push ix"},
+    {"address": 4610, "bytes": "dd210000", "text": "ld ix,#0"},
+    {"address": 4614, "bytes": "dd39", "text": "add ix,sp"},
+    {"address": 4624, "bytes": "00", "text": "nop"},
+    {"address": 4864, "bytes": "dde5", "text": "push ix"},
+    {"address": 4866, "bytes": "dd210000", "text": "ld ix,#0"},
+    {"address": 4870, "bytes": "dd39", "text": "add ix,sp"},
+    {"address": 4880, "bytes": "00", "text": "nop"},
+    {"address": 5120, "bytes": "00", "text": "nop"}
+  ],
+  "frame_chains": {
+    "three_frames": [
+      {"ix": 36864, "caller_ix": 36896, "return_address": 4625},
+      {"ix": 36896, "caller_ix": 36928, "return_address": 4881},
+      {"ix": 36928, "caller_ix": 0, "return_address": 0}
+    ],
+    "cycle": [
+      {"ix": 36864, "caller_ix": 36896, "return_address": 4625},
+      {"ix": 36896, "caller_ix": 36864, "return_address": 4881}
+    ],
+    "unknown_caller": [
+      {"ix": 36864, "caller_ix": 36896, "return_address": 32769}
+    ],
+    "invalid_return": [
+      {"ix": 36864, "caller_ix": 36896, "return_address": 0}
+    ]
+  },
+  "expectations": {
+    "three_frames": {
+      "pcs": [4360, 4625, 4881],
+      "scope_pcs": [4360, 4624, 4880]
+    },
+    "cycle_reason": "frame-pointer-cycle",
+    "unknown_reason": "unknown-caller",
+    "invalid_reason": "invalid-return-address",
+    "limit_reason": "frame-limit"
+  }
+}

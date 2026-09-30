@@ -1,0 +1,14 @@
+L:G$entry$0$0:8000
+L:G$counter$0$0:C020
+L:C$src/demo.c$12$1_2$3:8004
+L:XFdemo$helper$0$0:801F
+S:Ldemo.entry$value$1_2$3({2}SI:S),B,1,-6
+S:Ldemo.entry$value$2_0$4({2}SI:U),R,0,0,[l,h],B,1,-8
+S:Ldemo.entry$sloc7$1_2$3({2}SI:S),R,0,0,[e,d]
+S:G$counter$0$0({2}SI:U),E,0,0
+F:G$entry$0$0({2}DF,SV:S),C,0,0,0,0,0
+M:demo
+F:Fdemo$helper$0$0({2}DF,SI:S),C,0,0,1,2,3
+L:Fdemo$helper$0$0:8010
+L:A$demo.asm$22:8004
+T:Fdemo$Node[({0}S:S$next$0$0({2}DG,STNode:U),Z,0,0)({2}S:S$value$0$0({2}SI:S),Z,0,0)({4}S:S$bytes$0$0({4}DA4,SC:U),Z,0,0)]

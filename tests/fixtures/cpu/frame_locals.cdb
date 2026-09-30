@@ -1,0 +1,17 @@
+M:frames
+F:Fframes$leaf$0$0({2}DF,SV:S),C,0,0,0,0,0
+F:Fframes$middle$0$0({2}DF,SV:S),C,0,0,0,0,0
+F:Fframes$root$0$0({2}DF,SV:S),C,0,0,0,0,0
+L:Fframes$leaf$0$0:1100
+L:XFframes$leaf$0$0:111F
+L:Fframes$middle$0$0:1200
+L:XFframes$middle$0$0:121F
+L:Fframes$root$0$0:1300
+L:XFframes$root$0$0:131F
+L:C$frames.c$10$1_0$1:1108
+L:C$frames.c$20$1_0$3:1208
+L:C$frames.c$21$1_0$3:1210
+L:C$frames.c$30$1_0$5:1308
+S:Lframes.middle$local$1_0$3({2}SI:U),B,1,-2
+S:Lframes.middle$arg$0_0$0({2}SI:U),B,1,4
+S:Lframes.middle$reglocal$1_0$3({2}SI:U),R,0,0,[l,h]

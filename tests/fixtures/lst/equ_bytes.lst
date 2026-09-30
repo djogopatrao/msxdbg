@@ -1,0 +1,14 @@
+; Test EQU and relocation bytes - should not create instructions
+     00060100 c3          [ 1]
+
+      EQU my_value
+
+     00061000 cdfffe        [ 2]
+
+    .area _DATA
+
+   .globl data_label
+
+.data_label:
+
+.endarea

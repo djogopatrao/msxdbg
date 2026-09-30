@@ -1,0 +1,7 @@
+# MAP com pseudo símbolo após inválido (para test_valid_records_after_invalid) - 4 dígit hex válidos
+Value  Global
+
+    be7c   _g_code_base      main.o
+    feff   s__HEAP          ""
+invalid garbage here
+    cfff   l__/heap_area           ""

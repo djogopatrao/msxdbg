@@ -1,0 +1,10 @@
+{
+  "compiler": "SDCC 4.6.0 #16555",
+  "target": "z80",
+  "endianness": "little",
+  "values": [
+    {"source": "0.0f", "bytes": "00000000"},
+    {"source": "1.0f", "bytes": "0000803f"},
+    {"source": "-2.5f", "bytes": "000020c0"}
+  ]
+}

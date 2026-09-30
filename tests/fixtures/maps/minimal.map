@@ -1,0 +1,6 @@
+# MAP minimal: dois símbolos válidos para Z80 (addr hex <= 0xFFFF=65535)
+Value  Global
+
+    feff   _g_code_base      main.o
+    eeff    s__HEAP          main.o
+

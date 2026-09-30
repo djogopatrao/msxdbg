@@ -1,0 +1,12 @@
+; Multi-area listing for D08 contract testing
+.area _CODE
+
+.globl my_function
+
+.endarea
+
+.area _GSINIT
+
+    00020000        [5]
+
+.endarea
