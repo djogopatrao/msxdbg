@@ -107,7 +107,11 @@ class TextRenderer:
                 condition = f"  if {_escape(item.condition)}" if item.condition else ""
                 qualifier = _qualifier(item.qualifier)
                 kind = (f"watch {item.access} +{item.size}" if item.kind == "watchpoint" else "break")
-                console.print(f"{item.number}  {kind}  0x{item.address:04x}  {item.status}{condition}{qualifier}")
+                source = ""
+                if item.location is not None and item.location.source is not None:
+                    span = item.location.source
+                    source = f"  {_escape(span.path)}:{span.line}"
+                console.print(f"{item.number}  {kind}  0x{item.address:04x}{source}  {item.status}{condition}{qualifier}")
             return
         if isinstance(payload, RegisterTable):
             for name,value in sorted(payload.registers.values.items()):

@@ -54,6 +54,27 @@ class Session:
         self._breakpoint_manager.reconcile()
         return self._state
 
+    def _synchronize_stop(self) -> None:
+        """Synchronize externally changed execution state before inspection."""
+        # DISCONNECTED/UNKNOWN are deliberate local states and must not become
+        # attached merely because a target happens to report itself stopped.
+        # A cached STOPPED snapshot is authoritative until an execution or
+        # mutation invalidates it.
+        if self._state != SessionState.RUNNING:
+            return
+        status = self._target.execution_status()
+        if status == ExecutionStatus.STOPPED:
+            if self._state != SessionState.STOPPED or self._snapshot is None:
+                self._capture_stop()
+            return
+        if self._state != SessionState.RUNNING or self._snapshot is not None:
+            self._snapshot = None
+            self._memory_cache.clear()
+            self._stop_cache = StopCache()
+            self._selection = None
+            self._memory_epoch += 1
+        self._state = SessionState.RUNNING
+
     def resolve_target(self, query: TargetQuery) -> Resolution[ResolvedTarget]:
         if query.address is not None:
             locations=self._project.resolve(query.address, query.image)
@@ -66,9 +87,10 @@ class Session:
                              for s in symbols.candidates)
             return Resolution(symbols.status, candidates, symbols.diagnostics)
         lines=self._project.resolve_line(query.path, query.line, query.image)
-        candidates=tuple(ResolvedTarget(m.location.address,
-            self._project.resolve(m.location.address, query.image), query.path,
-            m.effective_line) for m in lines.candidates)
+        candidates=tuple(ResolvedTarget(
+            m.location.address,
+            Resolution(ResolutionStatus.UNIQUE, (m.location,), lines.diagnostics),
+            query.path, m.effective_line) for m in lines.candidates)
         return Resolution(lines.status, candidates, lines.diagnostics)
 
     def execute(self, request: ExecutionRequest, cancel: CancellationToken) -> StopResult:
@@ -135,11 +157,13 @@ class Session:
         return self._snapshot
 
     def where(self) -> StopResult:
+        self._synchronize_stop()
         if self._state != SessionState.STOPPED: raise InvalidSessionState("target is not stopped")
         if self._snapshot is None: self._capture_stop()
         return StopResult(self._snapshot, self._breakpoint_manager.matching(self._snapshot.registers.get("PC")))
 
     def inspection(self):
+        self._synchronize_stop()
         if self._state != SessionState.STOPPED or self._snapshot is None:
             raise InvalidSessionState("inspection requires a stopped target")
         trace = self.backtrace()
@@ -156,6 +180,7 @@ class Session:
                 and self._snapshot.stop_id == stop_id)
 
     def backtrace(self):
+        self._synchronize_stop()
         if self._state != SessionState.STOPPED or self._snapshot is None:
             raise InvalidSessionState("backtrace requires a stopped target")
         if not self._stop_cache.frames:

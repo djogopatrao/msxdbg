@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from msxdbg.__main__ import _diagnostic_lines
+from msxdbg.__main__ import _diagnostic_lines, _diagnostic_summary
 from msxdbg.debuginfo.diagnostics import Diagnostic, Origin
 
 
@@ -24,3 +24,17 @@ def test_package_metadata_declares_console_entry_point():
     assert 'requires-python = ">=3.10"' in metadata
     assert 'msxdbg = "msxdbg.__main__:main"' in metadata
     assert 'version = "0.11.0rc1"' in metadata
+
+
+def test_default_diagnostics_are_summarized_by_category():
+    diagnostics = (
+        Diagnostic("load.unsupported-type", "warning", "one"),
+        Diagnostic("load.unsupported-type", "warning", "two"),
+        Diagnostic("load.unresolved-owner", "warning", "three"),
+    )
+
+    lines = _diagnostic_summary(diagnostics)
+
+    assert lines[0] == ("warning: project loaded with 3 warnings "
+                        "(unresolved symbols/modules: 1, unsupported types: 2)")
+    assert lines[1] == "warning: use --verbose to show diagnostic details"

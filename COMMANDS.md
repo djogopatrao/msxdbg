@@ -45,6 +45,10 @@ Saída típica:
 ```
 
 Em falha, escreve `unresolved: <alvo>` em stderr e retorna código 1. Na reescrita, múltiplos candidatos serão reportados como ambiguidade, sem selecionar silenciosamente a primeira imagem.
+Por padrão, diagnósticos de carga são resumidos por categoria. Use `-v` ou
+`--verbose` para exibir códigos, mensagens e origens completos. A mesma opção
+está disponível em `shell` e `exec`; no `exec`, os diagnósticos continuam em
+stderr e não alteram o JSON Lines de stdout.
 
 ### `shell`: sessão interativa
 
@@ -519,8 +523,14 @@ Sem savestate disponível, `load yes` orienta executar `save` primeiro. Não há
 ## 11. Interação no REPL
 
 - Enter em linha vazia repete o último comando repetível. Reset/load nunca entram nesse mecanismo.
-- Tab completa comandos e, conforme o contexto, fontes, símbolos, registradores, tipos e subcomandos de `info`. Na reescrita, inclui macros resolvíveis no contexto e hex/bin, sem consultar o alvo.
-- O histórico é mantido em memória.
+- Setas para cima/baixo percorrem o histórico e Ctrl-R inicia pesquisa reversa.
+- Entradas vazias e duplicatas consecutivas não são gravadas. Até 1.000 linhas
+  são persistidas em `$XDG_STATE_HOME/msxdbg/history` ou, na ausência dessa
+  variável, em `~/.local/state/msxdbg/history`.
+- Tab completa comandos e aliases, fontes, símbolos, funções, variáveis e tipos
+  já presentes no catálogo carregado. A conclusão é ordenada, remove duplicatas
+  e não consulta memória nem executa comandos. Sem o módulo `readline`, o shell
+  continua funcionando com edição básica.
 - Ctrl-C no prompt é ignorado; durante execução/stepping, interrompe a espera e solicita parada.
 - Erros de comandos são apresentados sem encerrar o REPL.
 - **Proposta:** ajuda e completion derivam do mesmo registro, incluindo todos os aliases documentados.

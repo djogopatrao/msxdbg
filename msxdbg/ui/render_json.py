@@ -66,7 +66,10 @@ def _breakpoint(record):
             "location":None if record.location is None else {
                 "image":record.location.image.value,
                 "module":record.location.module.key if record.location.module else None,
-                "address":record.location.address}}
+                "address":record.location.address,
+                "source":None if record.location.source is None else {
+                    "path":record.location.source.path,
+                    "line":record.location.source.line}}}
 
 def _payload(payload):
     if isinstance(payload, ValueResult): return _value_result(payload)

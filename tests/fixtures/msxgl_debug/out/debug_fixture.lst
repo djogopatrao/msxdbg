@@ -1,0 +1,167 @@
+                                      1 ;--------------------------------------------------------
+                                      2 ; File Created by SDCC : free open source ISO C Compiler
+                                      3 ; Version 4.6.0 #16555 (Linux)
+                                      4 ;--------------------------------------------------------
+                                      5 	.module debug_fixture
+                                      6 	
+                                      7 	.optsdcc -mz80 sdcccall(1)
+                                      8 ;--------------------------------------------------------
+                                      9 ; Public variables in this module
+                                     10 ;--------------------------------------------------------
+                                     11 	.globl _main
+                                     12 	.globl _g_DebugDone
+                                     13 	.globl _g_DebugCounter
+                                     14 ;--------------------------------------------------------
+                                     15 ; special function registers
+                                     16 ;--------------------------------------------------------
+                                     17 ;--------------------------------------------------------
+                                     18 ; ram data
+                                     19 ;--------------------------------------------------------
+                                     20 	.area _DATA
+                                     21 ;--------------------------------------------------------
+                                     22 ; ram data
+                                     23 ;--------------------------------------------------------
+                                     24 	.area _INITIALIZED
+                         00000000    25 G$g_DebugCounter$0_0$0==.
+    00000000                         26 _g_DebugCounter::
+    00000000                         27 	.ds 2
+                         00000002    28 G$g_DebugDone$0_0$0==.
+    00000002                         29 _g_DebugDone::
+    00000002                         30 	.ds 1
+                                     31 ;--------------------------------------------------------
+                                     32 ; absolute ram data
+                                     33 ;--------------------------------------------------------
+                                     34 	.area _DABS (ABS)
+                                     35 	.area _DABS (ABS)
+                                     36 ;--------------------------------------------------------
+                                     37 ; global & static initialisations
+                                     38 ;--------------------------------------------------------
+                                     39 	.area _HOME
+                                     40 	.area _GSINIT
+                                     41 	.area _GSFINAL
+                                     42 	.area _GSINIT
+                                     43 ;--------------------------------------------------------
+                                     44 ; Home
+                                     45 ;--------------------------------------------------------
+                                     46 	.area _HOME
+                                     47 	.area _HOME
+                                     48 ;--------------------------------------------------------
+                                     49 ; code
+                                     50 ;--------------------------------------------------------
+                                     51 	.area _CODE
+                         00000000    52 	Fdebug_fixture$AddThree$0$0	= .
+                                     53 	.globl	Fdebug_fixture$AddThree$0$0
+                         00000000    54 	C$debug_fixture.c$7$0_0$7	= .
+                                     55 	.globl	C$debug_fixture.c$7$0_0$7
+                                     56 ;./debug_fixture.c:7: static u16 AddThree(u16 value)
+                                     57 ;	---------------------------------
+                                     58 ; Function AddThree
+                                     59 ; ---------------------------------
+    00000000                         60 _AddThree:
+    00000000 EB               [ 4]   61 	ex	de, hl
+                         00000001    62 	C$debug_fixture.c$9$1_0$7	= .
+                                     63 	.globl	C$debug_fixture.c$9$1_0$7
+                                     64 ;./debug_fixture.c:9: u16 local = value + 1;
+    00000001 13               [ 6]   65 	inc	de
+                         00000002    66 	C$debug_fixture.c$10$1_0$7	= .
+                                     67 	.globl	C$debug_fixture.c$10$1_0$7
+                                     68 ;./debug_fixture.c:10: local += 2;
+    00000002 13               [ 6]   69 	inc	de
+    00000003 13               [ 6]   70 	inc	de
+                         00000004    71 	C$debug_fixture.c$11$1_0$7	= .
+                                     72 	.globl	C$debug_fixture.c$11$1_0$7
+                                     73 ;./debug_fixture.c:11: return local;
+                         00000004    74 	C$debug_fixture.c$12$1_0$7	= .
+                                     75 	.globl	C$debug_fixture.c$12$1_0$7
+                                     76 ;./debug_fixture.c:12: }
+                         00000004    77 	C$debug_fixture.c$12$1_0$7	= .
+                                     78 	.globl	C$debug_fixture.c$12$1_0$7
+                         00000004    79 	XFdebug_fixture$AddThree$0$0	= .
+                                     80 	.globl	XFdebug_fixture$AddThree$0$0
+    00000004 C9               [10]   81 	ret
+                         00000005    82 	Fdebug_fixture$DebugTick$0$0	= .
+                                     83 	.globl	Fdebug_fixture$DebugTick$0$0
+                         00000005    84 	C$debug_fixture.c$14$1_0$9	= .
+                                     85 	.globl	C$debug_fixture.c$14$1_0$9
+                                     86 ;./debug_fixture.c:14: static void DebugTick(void)
+                                     87 ;	---------------------------------
+                                     88 ; Function DebugTick
+                                     89 ; ---------------------------------
+    00000005                         90 _DebugTick:
+                         00000005    91 	C$debug_fixture.c$16$1_0$9	= .
+                                     92 	.globl	C$debug_fixture.c$16$1_0$9
+                                     93 ;./debug_fixture.c:16: g_DebugCounter = AddThree(g_DebugCounter);
+    00000005 2Ar00r00         [16]   94 	ld	hl, (_g_DebugCounter)
+    00000008 CDr00r00         [17]   95 	call	_AddThree
+    0000000B ED 53r00r00      [20]   96 	ld	(_g_DebugCounter), de
+                         0000000F    97 	C$debug_fixture.c$17$2_0$10	= .
+                                     98 	.globl	C$debug_fixture.c$17$2_0$10
+                                     99 ;./debug_fixture.c:17: if (g_DebugCounter >= 12)
+    0000000F 11 0C 00         [10]  100 	ld	de, #0x000c
+    00000012 2Ar00r00         [16]  101 	ld	hl, (_g_DebugCounter)
+    00000015 BF               [ 4]  102 	cp	a, a
+    00000016 ED 52            [15]  103 	sbc	hl, de
+    00000018 D8               [11]  104 	ret	c
+                         00000019   105 	C$debug_fixture.c$18$2_0$10	= .
+                                    106 	.globl	C$debug_fixture.c$18$2_0$10
+                                    107 ;./debug_fixture.c:18: g_DebugDone = 1;
+    00000019 21r02r00         [10]  108 	ld	hl, #_g_DebugDone
+    0000001C 36 01            [10]  109 	ld	(hl), #0x01
+                         0000001E   110 	C$debug_fixture.c$19$2_0$9	= .
+                                    111 	.globl	C$debug_fixture.c$19$2_0$9
+                                    112 ;./debug_fixture.c:19: }
+                         0000001E   113 	C$debug_fixture.c$19$2_0$9	= .
+                                    114 	.globl	C$debug_fixture.c$19$2_0$9
+                         0000001E   115 	XFdebug_fixture$DebugTick$0$0	= .
+                                    116 	.globl	XFdebug_fixture$DebugTick$0$0
+    0000001E C9               [10]  117 	ret
+                         0000001F   118 	G$main$0$0	= .
+                                    119 	.globl	G$main$0$0
+                         0000001F   120 	C$debug_fixture.c$21$2_0$12	= .
+                                    121 	.globl	C$debug_fixture.c$21$2_0$12
+                                    122 ;./debug_fixture.c:21: void main(void)
+                                    123 ;	---------------------------------
+                                    124 ; Function main
+                                    125 ; ---------------------------------
+    0000001F                        126 _main::
+                         0000001F   127 	C$debug_fixture.c$23$1_0$12	= .
+                                    128 	.globl	C$debug_fixture.c$23$1_0$12
+                                    129 ;./debug_fixture.c:23: g_DebugCounter = 0;
+    0000001F 21 00 00         [10]  130 	ld	hl, #0x0000
+    00000022 22r00r00         [16]  131 	ld	(_g_DebugCounter), hl
+                         00000025   132 	C$debug_fixture.c$24$1_0$12	= .
+                                    133 	.globl	C$debug_fixture.c$24$1_0$12
+                                    134 ;./debug_fixture.c:24: while (!g_DebugDone)
+    00000025                        135 00101$:
+    00000025 3Ar02r00         [13]  136 	ld	a, (_g_DebugDone+0)
+    00000028 B7               [ 4]  137 	or	a, a
+    00000029 20 05            [12]  138 	jr	nz, 00105$
+                         0000002B   139 	C$debug_fixture.c$25$1_0$12	= .
+                                    140 	.globl	C$debug_fixture.c$25$1_0$12
+                                    141 ;./debug_fixture.c:25: DebugTick();
+    0000002B CDr05r00         [17]  142 	call	_DebugTick
+    0000002E 18 F5            [12]  143 	jr	00101$
+    00000030                        144 00105$:
+                         00000030   145 	C$debug_fixture.c$29$3_0$14	= .
+                                    146 	.globl	C$debug_fixture.c$29$3_0$14
+                                    147 ;./debug_fixture.c:29: g_DebugCounter++;
+    00000030 ED 4Br00r00      [20]  148 	ld	bc, (_g_DebugCounter)
+    00000034 03               [ 6]  149 	inc	bc
+    00000035 ED 43r00r00      [20]  150 	ld	(_g_DebugCounter), bc
+                         00000039   151 	C$debug_fixture.c$31$2_0$12	= .
+                                    152 	.globl	C$debug_fixture.c$31$2_0$12
+                                    153 ;./debug_fixture.c:31: }
+                         00000039   154 	C$debug_fixture.c$31$2_0$12	= .
+                                    155 	.globl	C$debug_fixture.c$31$2_0$12
+                         00000039   156 	XG$main$0$0	= .
+                                    157 	.globl	XG$main$0$0
+    00000039 18 F5            [12]  158 	jr	00105$
+                                    159 	.area _CODE
+                                    160 	.area _INITIALIZER
+                         00000000   161 Fdebug_fixture$__xinit_g_DebugCounter$0_0$0 == .
+    00000000                        162 __xinit__g_DebugCounter:
+    00000000 00 00                  163 	.dw #0x0000
+                         00000002   164 Fdebug_fixture$__xinit_g_DebugDone$0_0$0 == .
+    00000002                        165 __xinit__g_DebugDone:
+    00000002 00                     166 	.db #0x00	; 0
+                                    167 	.area _CABS (ABS)

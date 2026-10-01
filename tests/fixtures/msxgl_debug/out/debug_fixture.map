@@ -1,0 +1,182 @@
+ASxxxx Linker V05.50.4-SDLD,  page 1.
+Hexadecimal  [32-Bits]
+
+Area                                    Addr        Size        Decimal Bytes (Attributes)
+--------------------------------        ----        ----        ------- ----- ------------
+.  .ABS.                            00000000    00000000 =           0. bytes (ABS,CON)
+
+         Value  Global                             Global Defined In Module
+         -----  --------------------------------   ------------------------
+     00000000  .__.ABS.                           debug_fixture
+     00000000  l__BSEG                         
+     00000000  l__BSS                          
+     00000000  l__CABS                         
+     00000000  l__DABS                         
+     00000000  l__GSFINAL                      
+     00000000  l__GSINIT                       
+     00000000  l__HEADER                       
+     00000000  l__HEADER0                      
+     00000000  l__HEAP                         
+     00000000  l__HOME                         
+     00000000  l__RODATA                       
+     00000000  s__CABS                         
+     00000000  s__DABS                         
+     00000000  s__HEADER                       
+     00000000  s__HEADER0                      
+     00000003  l__DATA                         
+     00000003  l__INITIALIZED                  
+     00000003  l__INITIALIZER                  
+     00000091  l__CODE                         
+     00004000  s__CODE                         
+     00004091  s__HOME                         
+     00004091  s__INITIALIZER                  
+     00004091  s__RODATA                       
+     00004094  s__GSFINAL                      
+     00004094  s__GSINIT                       
+     0000C000  s__DATA                         
+     0000C003  s__INITIALIZED                  
+     0000C006  s__BSEG                         
+     0000C006  s__BSS                          
+     0000C006  s__HEAP                         
+
+ASxxxx Linker V05.50.4-SDLD,  page 2.
+Hexadecimal  [32-Bits]
+
+Area                                    Addr        Size        Decimal Bytes (Attributes)
+--------------------------------        ----        ----        ------- ----- ------------
+_CODE                               00004000    00000091 =         145. bytes (REL,CON)
+
+         Value  Global                             Global Defined In Module
+         -----  --------------------------------   ------------------------
+     00004000  _g_FirstAddr                       crt0
+     00004000  _g_HeaderAddr                      crt0
+     00004000  crt0_rom_header                    crt0
+     00004010  _g_AppSignature                    crt0
+     00004023  crt0_p1_to_p2                      crt0
+     00004041  crt0_init_globals                  crt0
+     00004056  A$debug_fixture$61                 debug_fixture
+     00004056  C$debug_fixture.c$7$0_0$7          debug_fixture
+     00004056  Fdebug_fixture$AddThree$0$0        debug_fixture
+     00004057  A$debug_fixture$65                 debug_fixture
+     00004057  C$debug_fixture.c$9$1_0$7          debug_fixture
+     00004058  A$debug_fixture$69                 debug_fixture
+     00004058  C$debug_fixture.c$10$1_0$7         debug_fixture
+     00004059  A$debug_fixture$70                 debug_fixture
+     0000405A  A$debug_fixture$81                 debug_fixture
+     0000405A  C$debug_fixture.c$11$1_0$7         debug_fixture
+     0000405A  C$debug_fixture.c$12$1_0$7         debug_fixture
+     0000405A  XFdebug_fixture$AddThree$0$0       debug_fixture
+     0000405B  A$debug_fixture$94                 debug_fixture
+     0000405B  C$debug_fixture.c$14$1_0$9         debug_fixture
+     0000405B  C$debug_fixture.c$16$1_0$9         debug_fixture
+     0000405B  Fdebug_fixture$DebugTick$0$0       debug_fixture
+     0000405E  A$debug_fixture$95                 debug_fixture
+     00004061  A$debug_fixture$96                 debug_fixture
+     00004065  A$debug_fixture$100                debug_fixture
+     00004065  C$debug_fixture.c$17$2_0$10        debug_fixture
+     00004068  A$debug_fixture$101                debug_fixture
+     0000406B  A$debug_fixture$102                debug_fixture
+     0000406C  A$debug_fixture$103                debug_fixture
+     0000406E  A$debug_fixture$104                debug_fixture
+     0000406F  A$debug_fixture$108                debug_fixture
+     0000406F  C$debug_fixture.c$18$2_0$10        debug_fixture
+     00004072  A$debug_fixture$109                debug_fixture
+     00004074  A$debug_fixture$117                debug_fixture
+     00004074  C$debug_fixture.c$19$2_0$9         debug_fixture
+     00004074  XFdebug_fixture$DebugTick$0$0      debug_fixture
+     00004075  A$debug_fixture$130                debug_fixture
+     00004075  C$debug_fixture.c$21$2_0$12        debug_fixture
+     00004075  C$debug_fixture.c$23$1_0$12        debug_fixture
+     00004075  G$main$0$0                         debug_fixture
+     00004075  _main                              debug_fixture
+     00004078  A$debug_fixture$131                debug_fixture
+     0000407B  A$debug_fixture$136                debug_fixture
+     0000407B  C$debug_fixture.c$24$1_0$12        debug_fixture
+     0000407E  A$debug_fixture$137                debug_fixture
+     0000407F  A$debug_fixture$138                debug_fixture
+     00004081  A$debug_fixture$142                debug_fixture
+     00004081  C$debug_fixture.c$25$1_0$12        debug_fixture
+     00004084  A$debug_fixture$143                debug_fixture
+     00004086  A$debug_fixture$148                debug_fixture
+ASxxxx Linker V05.50.4-SDLD,  page 3.
+Hexadecimal  [32-Bits]
+
+Area                                    Addr        Size        Decimal Bytes (Attributes)
+--------------------------------        ----        ----        ------- ----- ------------
+_CODE                               00004000    00000091 =         145. bytes (REL,CON)
+
+         Value  Global                             Global Defined In Module
+         -----  --------------------------------   ------------------------
+     00004086  C$debug_fixture.c$29$3_0$14        debug_fixture
+     0000408A  A$debug_fixture$149                debug_fixture
+     0000408B  A$debug_fixture$150                debug_fixture
+     0000408F  A$debug_fixture$158                debug_fixture
+     0000408F  C$debug_fixture.c$31$2_0$12        debug_fixture
+     0000408F  XG$main$0$0                        debug_fixture
+
+ASxxxx Linker V05.50.4-SDLD,  page 4.
+Hexadecimal  [32-Bits]
+
+Area                                    Addr        Size        Decimal Bytes (Attributes)
+--------------------------------        ----        ----        ------- ----- ------------
+_INITIALIZER                        00004091    00000003 =           3. bytes (REL,CON)
+
+         Value  Global                             Global Defined In Module
+         -----  --------------------------------   ------------------------
+     00004091  Fdebug_fixture$__xinit_g_DebugCo   debug_fixture
+     00004093  Fdebug_fixture$__xinit_g_DebugDo   debug_fixture
+
+ASxxxx Linker V05.50.4-SDLD,  page 5.
+Hexadecimal  [32-Bits]
+
+Area                                    Addr        Size        Decimal Bytes (Attributes)
+--------------------------------        ----        ----        ------- ----- ------------
+_GSFINAL                            00004094    00000000 =           0. bytes (REL,CON)
+
+         Value  Global                             Global Defined In Module
+         -----  --------------------------------   ------------------------
+     00004094  _g_LastAddr                        crt0
+
+ASxxxx Linker V05.50.4-SDLD,  page 6.
+Hexadecimal  [32-Bits]
+
+Area                                    Addr        Size        Decimal Bytes (Attributes)
+--------------------------------        ----        ----        ------- ----- ------------
+_DATA                               0000C000    00000003 =           3. bytes (REL,CON)
+
+         Value  Global                             Global Defined In Module
+         -----  --------------------------------   ------------------------
+     0000C000  _g_HeapStartAddress                crt0
+     0000C002  _g_ROMSlotID                       crt0
+
+ASxxxx Linker V05.50.4-SDLD,  page 7.
+Hexadecimal  [32-Bits]
+
+Area                                    Addr        Size        Decimal Bytes (Attributes)
+--------------------------------        ----        ----        ------- ----- ------------
+_INITIALIZED                        0000C003    00000003 =           3. bytes (REL,CON)
+
+         Value  Global                             Global Defined In Module
+         -----  --------------------------------   ------------------------
+     0000C003  G$g_DebugCounter$0_0$0             debug_fixture
+     0000C003  _g_DebugCounter                    debug_fixture
+     0000C005  G$g_DebugDone$0_0$0                debug_fixture
+     0000C005  _g_DebugDone                       debug_fixture
+
+ASxxxx Linker V05.50.4-SDLD,  page 8.
+
+Files Linked                              [ module(s) ]
+
+MSXgl-1.5.0/projects/debug_fixture/out/crt0_rom32.rel
+                                          [ crt0 ]
+MSXgl-1.5.0/projects/debug_fixture/out/debug_fixture.rel
+                                          [ debug_fixture ]
+
+ASxxxx Linker V05.50.4-SDLD,  page 9.
+
+User Base Address Definitions
+
+_CODE = 0x4000
+_DATA = 0xc000
+
+

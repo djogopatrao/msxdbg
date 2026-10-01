@@ -36,6 +36,7 @@ class ResolveOptions:
     target: str
     maps: Optional[Tuple[Path, ...]] = None
     project: Optional[Path] = None
+    verbose: bool = False
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,7 @@ class ShellOptions:
     signature: Optional[SignatureSpec] = None
     mode: StepMode = StepMode.SOURCE
     project: Optional[Path] = None
+    verbose: bool = False
 
 
 @dataclass(frozen=True)
@@ -64,6 +66,7 @@ class ExecOptions:
     signature: Optional[SignatureSpec] = None
     mode: StepMode = StepMode.SOURCE
     project: Optional[Path] = None
+    verbose: bool = False
 
 
 def build_argument_parser() -> ArgumentParser:
@@ -75,6 +78,7 @@ def build_argument_parser() -> ArgumentParser:
     resolve_source.add_argument('--out', type=Path, action='append')
     resolve_source.add_argument('--project', type=Path)
     resolve.add_argument('--map', type=Path, action='append', dest='maps')
+    resolve.add_argument('-v', '--verbose', action='store_true')
     resolve.add_argument('target', help='[image::]0xADDR or [image::]file:line')
     def live(name, help_text):
         command = subcommands.add_parser(name, help=help_text)
@@ -88,6 +92,7 @@ def build_argument_parser() -> ArgumentParser:
         command.add_argument('--struct-header', type=Path, action='append', default=[])
         command.add_argument('--verify-signature', type=_signature)
         command.add_argument('--mode', choices=('c', 'source', 'asm', 'assembly'), default='c')
+        command.add_argument('-v', '--verbose', action='store_true')
         return command
     live('shell', 'attach an interactive debugger to openMSX')
     execute = live('exec', 'execute debugger commands and emit JSON Lines')
@@ -162,6 +167,34 @@ def _diagnostic_lines(diagnostics, prefix: str = "warning"):
     return tuple(lines)
 
 
+def _diagnostic_category(code: str) -> str:
+    if "unsupported-type" in code or "invalid-type" in code:
+        return "unsupported types"
+    if any(part in code for part in ("unresolved", "missing-symbol", "missing-module")):
+        return "unresolved symbols/modules"
+    if any(part in code for part in ("address", "relocation", "base-conflict", "link-conflict")):
+        return "address/relocation conflicts"
+    if any(part in code for part in ("source", "listing", "lst.")):
+        return "source/listing information"
+    if any(part in code for part in ("header", "macro")):
+        return "headers/macros"
+    if any(part in code for part in ("parse", "invalid-record", "unreadable-artifact")):
+        return "artifact parsing"
+    return "other"
+
+
+def _diagnostic_summary(diagnostics, successful: bool = True) -> Tuple[str, ...]:
+    diagnostics = tuple(diagnostics)
+    if not diagnostics:
+        return ()
+    categories = Counter(_diagnostic_category(item.code) for item in diagnostics)
+    detail = ", ".join(f"{name}: {count}" for name, count in sorted(categories.items()))
+    headline = (f"warning: project loaded with {len(diagnostics)} warnings"
+                if successful else f"warning: {len(diagnostics)} project diagnostics")
+    return (f"{headline} ({detail})",
+            "warning: use --verbose to show diagnostic details")
+
+
 def run_resolve(options: ResolveOptions) -> int:
     try:
         image, address, path, line = _target(options.target)
@@ -196,10 +229,13 @@ def run_resolve(options: ResolveOptions) -> int:
         return 2
     except ProjectLoadError as exc:
         print(f'error: {exc}', file=sys.stderr)
-        for diagnostic in exc.diagnostics:
-            print(f'{diagnostic.code}: {diagnostic.message}', file=sys.stderr)
+        lines = (_diagnostic_lines(exc.diagnostics, prefix="") if options.verbose
+                 else _diagnostic_summary(exc.diagnostics, successful=False))
+        for line in lines: print(line, file=sys.stderr)
         return 1
-    for line in _diagnostic_lines(loaded.diagnostics):
+    lines = (_diagnostic_lines(loaded.diagnostics) if options.verbose
+             else _diagnostic_summary(loaded.diagnostics))
+    for line in lines:
         print(line, file=sys.stderr)
     if result.status == 'missing':
         print('unresolved: ' + options.target, file=sys.stderr)
@@ -307,8 +343,10 @@ def _probe_debug_features(transport: OpenMSXTransport):
     return conditional, watches, mapping
 
 
-def _report_diagnostics(loaded) -> None:
-    for line in _diagnostic_lines(loaded.diagnostics, prefix=""):
+def _report_diagnostics(loaded, verbose: bool = False) -> None:
+    lines = (_diagnostic_lines(loaded.diagnostics, prefix="") if verbose
+             else _diagnostic_summary(loaded.diagnostics))
+    for line in lines:
         print(line, file=sys.stderr)
 
 
@@ -316,7 +354,7 @@ def _run_live(options, batch: bool) -> int:
     context = None
     try:
         loaded, context = _compose_context(options, 'batch' if batch else 'interactive')
-        _report_diagnostics(loaded)
+        _report_diagnostics(loaded, options.verbose)
         context.session.attach()
         application = (CommandApplication(batch=BatchRunner(
             policy=BatchPolicy(options.timeout_seconds))) if batch else CommandApplication())
@@ -331,8 +369,9 @@ def _run_live(options, batch: bool) -> int:
         return 2
     except ProjectLoadError as exc:
         print(f'error: {exc}', file=sys.stderr)
-        for diagnostic in exc.diagnostics:
-            print(f'{diagnostic.code}: {diagnostic.message}', file=sys.stderr)
+        lines = (_diagnostic_lines(exc.diagnostics, prefix="") if options.verbose
+                 else _diagnostic_summary(exc.diagnostics, successful=False))
+        for line in lines: print(line, file=sys.stderr)
         return 1
     except Exception as exc:
         print(f'error: {type(exc).__name__}: {exc}', file=sys.stderr)
@@ -363,13 +402,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
     if options.command == 'resolve':
         return run_resolve(ResolveOptions(tuple(options.out or ()), options.target,
-            tuple(options.maps) if options.maps is not None else None, options.project))
+            tuple(options.maps) if options.maps is not None else None, options.project,
+            options.verbose))
     mode = StepMode.SOURCE if options.mode in ('c', 'source') else StepMode.ASSEMBLY
     common = dict(outputs=tuple(options.out or ()), socket=options.socket,
         maps=tuple(options.maps) if options.maps is not None else None,
         cdbs=tuple(options.cdbs) if options.cdbs is not None else None,
         source_roots=tuple(options.source_root), struct_headers=tuple(options.struct_header),
-        signature=options.verify_signature, mode=mode, project=options.project)
+        signature=options.verify_signature, mode=mode, project=options.project,
+        verbose=options.verbose)
     if options.command == 'shell':
         return run_shell(ShellOptions(**common))
     if options.command == 'exec':

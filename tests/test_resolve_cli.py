@@ -15,7 +15,8 @@ def test_resolve_address_golden_without_network(tmp_path, capsys, monkeypatch):
     assert main(['resolve', '--out', str(tmp_path), '0x8004']) == 0
     result = capsys.readouterr()
     assert result.out == '0x8004  main (+0x0004)  src/main.c:11: source 11\n'
-    assert 'load.estimated-limit' in result.err
+    assert 'project loaded with 2 warnings' in result.err
+    assert 'use --verbose' in result.err
 
 
 def test_resolve_line_advances_and_reports_effective_line(tmp_path, capsys):
@@ -61,7 +62,12 @@ def test_invalid_target_is_usage_failure_before_loading(tmp_path, target, capsys
 def test_initialization_error_is_reported_without_traceback(tmp_path, capsys):
     assert main(['resolve', '--out', str(tmp_path / 'absent'), '0x8000']) == 1
     result = capsys.readouterr()
-    assert result.out == '' and 'load.missing-directory' in result.err
+    assert result.out == '' and '1 project diagnostics' in result.err
+    assert 'load.missing-directory' not in result.err
+
+    assert main(['resolve', '--verbose', '--out', str(tmp_path / 'absent'),
+                 '0x8000']) == 1
+    assert 'load.missing-directory' in capsys.readouterr().err
     assert 'Traceback' not in result.err
 
 

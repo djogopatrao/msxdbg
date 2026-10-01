@@ -152,8 +152,21 @@ def reconcile(image_id, maps, listings, cdbs, diagnostics):
         for link in data.links:
             links[link.identity].append(link)
 
+    def link_records(identity):
+        """Match SDCC links that omit an explicit zero lexical sublevel."""
+        prefix = 'X' if identity.startswith('X') else ''
+        core = identity[1:] if prefix else identity
+        aliases = [identity]
+        parts = core.split('$')
+        if len(parts) == 4:
+            if parts[2].endswith('_0'):
+                aliases.append(prefix + '$'.join(parts[:2] + [parts[2][:-2], parts[3]]))
+            elif '_' not in parts[2]:
+                aliases.append(prefix + '$'.join(parts[:2] + [parts[2] + '_0', parts[3]]))
+        return tuple(item for alias in aliases for item in links.get(alias, ()))
+
     def linked(identity):
-        found = links.get(identity, ())
+        found = link_records(identity)
         addresses = {x.address for x in found}
         if len(addresses) > 1:
             warn('load.link-conflict', 'conflicting addresses for ' + identity, *(x.origin for x in found))
@@ -169,7 +182,7 @@ def reconcile(image_id, maps, listings, cdbs, diagnostics):
         if any(s.address != address for s in matches):
             warn('load.map-cdb-conflict', 'MAP and CDB addresses disagree for ' + raw.identity.raw,
                  raw.origin, *(s.origin for s in matches),
-                 *(x.origin for x in links.get(raw.identity.raw, ())))
+                 *(x.origin for x in link_records(raw.identity.raw)))
 
     def owner(raw):
         if raw.identity.module_key:
@@ -202,7 +215,12 @@ def reconcile(image_id, maps, listings, cdbs, diagnostics):
                 accepted.append(first)
         return accepted
 
-    collision = {x.identity.raw for x in raw_functions} & {x.identity.raw for x in raw_symbols}
+    function_symbols = {x.identity.raw for x in raw_symbols
+                        if x.type_chain.raw.startswith('DF,')
+                        and x.storage.code in ('C', 'Z')}
+    collision = ({x.identity.raw for x in raw_functions}
+                 & {x.identity.raw for x in raw_symbols}
+                 - function_symbols)
     for identity in sorted(collision):
         warn('load.identity-conflict', 'identity declared as both function and variable: ' + identity)
     functions = []
@@ -228,8 +246,8 @@ def reconcile(image_id, maps, listings, cdbs, diagnostics):
         end = exit_ + 1 if exit_ is not None and exit_ >= entry else None
         if exit_ is not None and exit_ < entry:
             warn('load.invalid-function-end', 'function exit precedes entry', raw.origin)
-        evidence = (raw.origin,) + tuple(x.origin for x in links[raw.identity.raw])
-        evidence += tuple(x.origin for x in links.get('X' + raw.identity.raw, ()))
+        evidence = (raw.origin,) + tuple(x.origin for x in link_records(raw.identity.raw))
+        evidence += tuple(x.origin for x in link_records('X' + raw.identity.raw))
         functions.append(Function(FunctionId(module, raw.identity.raw), raw.identity.name, entry,
                                   end, 'cdb-exit' if end is not None else None, evidence=evidence))
         modules.setdefault(module, Module(module, module.key))
@@ -282,7 +300,8 @@ def reconcile(image_id, maps, listings, cdbs, diagnostics):
     type_resolver = TypeResolver(image_id, raw_types, diagnostics)
     variables = []
     for raw in declarations(raw_symbols):
-        if raw.is_temporary or raw.identity.raw in collision:
+        if (raw.is_temporary or raw.identity.raw in collision
+                or raw.identity.raw in function_symbols):
             continue
         module = owner(raw)
         if module is None:

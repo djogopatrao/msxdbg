@@ -197,7 +197,17 @@ class Project:
             if following:
                 selected = min(following, key=lambda x: (x.source.line, x.address))
                 candidates.append(LineMatch(line, selected.source.line, selected))
-        return self._result(candidates, image)
+        # CDB and listing reconciliation can expose the same source/address
+        # through more than one module record.  That is supporting evidence,
+        # not a user-visible ambiguity.
+        unique = {}
+        for candidate in candidates:
+            source = candidate.location.source
+            key = (candidate.location.image, candidate.location.address,
+                   source.normalized_path if source is not None else None,
+                   candidate.effective_line)
+            unique.setdefault(key, candidate)
+        return self._result(unique.values(), image)
 
     def lookup_symbol(
         self, name: str, image: Optional[ImageId] = None
@@ -314,8 +324,13 @@ class Project:
     def completion_catalog(self) -> CompletionCatalog:
         from ._types import PRIMITIVES, TYPE_ALIASES
         symbols = {s.name for item in self.images for s in item.symbols}
+        symbols.update(f.name for item in self.images for f in item.functions)
+        symbols.update(v.name for item in self.images for v in item.variables)
+        symbols.update(s.name for item in self.images for module in item.modules
+                       for s in module.labels)
         symbols.update(s.name[1:] for item in self.images for s in item.symbols if s.name.startswith("_"))
         symbols.update(f"{item.id.value}::{s.name}" for item in self.images for s in item.symbols)
+        symbols.update(f"{item.id.value}::{f.name}" for item in self.images for f in item.functions)
         types = {t.name for item in self.images for t in item.types if t.category != "incomplete"}
         types.update(t.name for t in PRIMITIVES)
         types.update(TYPE_ALIASES)

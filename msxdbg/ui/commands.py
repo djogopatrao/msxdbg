@@ -1,6 +1,6 @@
 """Command dispatcher and handler contracts."""
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import re
 from typing import Optional
 from msxdbg.debuginfo.index import Project, VariableKind
@@ -18,7 +18,8 @@ from msxdbg.session.breakpoints import MappingQualifier
 from msxdbg.session.results import ResolvedTarget, TargetQuery
 from msxdbg.session.safety import DangerousAction, InteractiveEntry
 from msxdbg.session.state import StepMode
-from .registry import CommandArguments, CommandRegistry, CommandSpec, Completion
+from .registry import (CommandArguments, CommandRegistry, CommandSpec, Completion,
+                       CompletionRequest)
 from .results import (BreakpointPayload, BreakpointTable, CommandError,
                       CommandResult, DisassemblyPayload, FrameTable, HelpPayload,
                       MessagePayload, PageTable, RegisterTable, SourcePayload,
@@ -417,6 +418,11 @@ class CommandDispatcher:
         try: return self._registry.lookup(command)
         except KeyError: return None
 
+    def complete(self, text: str, cursor: int, context: CommandContext):
+        """Return deterministic, read-only completions for the current project."""
+        return self._registry.complete(CompletionRequest(
+            text, cursor, context.project.completion_catalog()))
+
     def dispatch(self, text: str, context: CommandContext) -> CommandResult:
         stripped = text.strip()
         if not stripped:
@@ -617,6 +623,12 @@ def handle_list(arguments: CommandArguments, context: CommandContext) -> Command
             if path is None: raise ValueError("a source file is required")
             match = context.project.resolve_line(path, arguments.line)
             source = match.unique_or_none().location.source if match.status == "unique" else None
+            # Listing is a source-navigation operation.  The executable line is
+            # useful for breakpoints, but must not silently move the requested
+            # source window to that later line.
+            if source is not None:
+                source = replace(source, line=arguments.line,
+                                 text=(source.text if source.line == arguments.line else None))
         else:
             location = context.session.where().snapshot.pc_resolution.unique_or_none()
             source = location.source if location is not None else None

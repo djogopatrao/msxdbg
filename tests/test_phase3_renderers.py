@@ -2,7 +2,8 @@
 import json
 from pathlib import Path
 import pytest
-from msxdbg.debuginfo.model import AbsoluteStorage, ImageId, ModuleId, TypeId, Variable, VariableId
+from msxdbg.debuginfo.model import (AbsoluteStorage, CodeLocation, ImageId,
+    ModuleId, SourceSpan, TypeId, Variable, VariableId)
 from msxdbg.debuginfo.model import Resolution, ResolutionStatus
 from msxdbg.debuginfo.sources import SourceWindow
 from msxdbg.eval.values import (ArrayValue, ScalarValue, StringValue, StructValue,
@@ -92,6 +93,20 @@ def test_json_explicitly_maps_session_and_navigation_payloads():
     for payload, key in payloads:
         data = json.loads(renderer.encode(CommandResult("test", True, payload), 0))["data"]
         assert key in data
+
+
+def test_breakpoint_renderers_preserve_source_location():
+    image = ImageId("app")
+    location = CodeLocation(image, 0x8123, source=SourceSpan(
+        "src/world_map.c", "src/world_map.c", 10))
+    record = BreakpointRecord(1, 0x8123, location, "bp#1", "active")
+
+    assert render(BreakpointTable((record,))) == [
+        "1  break  0x8123  src/world_map.c:10  active"]
+    data = json.loads(JsonRenderer().encode(
+        CommandResult("info", True, BreakpointTable((record,))), 0))
+    assert data["data"]["breakpoints"][0]["location"]["source"] == {
+        "path": "src/world_map.c", "line": 10}
 
 
 def test_renderers_reject_unknown_payload_instead_of_leaking_internals():

@@ -1,0 +1,14 @@
+ProjName = "debug_fixture";
+ProjModules = [ ProjName ];
+LibModules = [];
+Machine = "1";
+Target = "ROM_32K";
+CheckVersion = true;
+AppSignature = true;
+AppCompany = "GL";
+AppID = "T1";
+BuildLibrary = false;
+Debug = true;
+DebugSymbols = true;
+Optim = "Default";
+DoRun = false;

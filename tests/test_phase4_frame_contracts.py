@@ -290,3 +290,15 @@ def test_session_rejects_backtrace_and_selection_while_not_stopped(cpu_fixture):
         session.backtrace()
     with pytest.raises(InvalidSessionState, match="stopped"):
         session.select_frame(0)
+
+
+def test_external_stop_is_reconciled_before_backtrace(cpu_fixture):
+    session, target = make_session(cpu_fixture)
+    session.attach()
+    session.invalidate()  # local execution state says running
+    assert target.execution_status().value == "stopped"  # target stopped externally
+
+    trace = session.backtrace()
+
+    assert session.state == SessionState.STOPPED
+    assert trace.frames

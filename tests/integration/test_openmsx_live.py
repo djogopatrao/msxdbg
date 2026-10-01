@@ -18,6 +18,11 @@ import pytest
 from msxdbg.target.api import ExecutionStatus, TargetCapabilities
 from msxdbg.target.openmsx import OpenMSXTarget
 from msxdbg.target.transport import OpenMSXTransport, TransportConfig, discover_socket
+from msxdbg.debuginfo.loader import ImageSpec, ProjectLoader, ProjectSpec
+from msxdbg.debuginfo.model import ImageId
+from msxdbg.session.core import Session
+from msxdbg.session.safety import SafetyGate
+from msxdbg.session.state import SessionConfig, SessionState
 
 
 LIVE_SOCKET = os.environ.get("MSXDBG_LIVE_SOCKET")
@@ -25,6 +30,7 @@ ALLOW_BREAKPOINTS = os.environ.get("MSXDBG_LIVE_BREAKPOINTS") == "1"
 ALLOW_EXECUTION = os.environ.get("MSXDBG_LIVE_EXECUTION") == "1"
 ALLOW_OPTIMIZATIONS = os.environ.get("MSXDBG_LIVE_OPTIMIZATIONS") == "1"
 LIVE_OUT = os.environ.get("MSXDBG_LIVE_OUT")
+ALLOW_MSXGL_FIXTURE = os.environ.get("MSXDBG_LIVE_MSXGL_FIXTURE") == "1"
 
 pytestmark = pytest.mark.live
 
@@ -38,6 +44,34 @@ def _target() -> OpenMSXTarget:
 def _require_stopped(target: OpenMSXTarget) -> None:
     if target.execution_status() != ExecutionStatus.STOPPED:
         pytest.skip("live openMSX must be paused by the operator")
+
+
+class _LiveClock:
+    monotonic = staticmethod(time.monotonic)
+    sleep = staticmethod(time.sleep)
+
+
+def _msxgl_fixture():
+    root = Path(__file__).resolve().parents[2]
+    return root, root / "tests" / "fixtures" / "msxgl_debug"
+
+
+def _run_msxgl_exec(*commands):
+    root, fixture = _msxgl_fixture()
+    command = (
+        sys.executable, "-m", "msxdbg", "exec",
+        "--out", str(fixture / "out"),
+        "--source-root", str(fixture),
+        "--socket", LIVE_SOCKET,
+        "--json", "--timeout", "10",
+    ) + tuple(item for text in commands for item in ("-c", text))
+    completed = subprocess.run(
+        command, cwd=root, text=True, capture_output=True, timeout=120,
+        check=False,
+    )
+    assert completed.returncode == 0, (
+        f"stderr:\n{completed.stderr}\nstdout:\n{completed.stdout}")
+    return [json.loads(line) for line in completed.stdout.splitlines()]
 
 
 @pytest.mark.skipif(not LIVE_SOCKET, reason="MSXDBG_LIVE_SOCKET is not set")
@@ -160,3 +194,84 @@ def test_live_persistent_connection_and_block_read():
     finally:
         legacy.close()
         optimized.close()
+
+
+@pytest.mark.skipif(
+    not (LIVE_SOCKET and ALLOW_EXECUTION and ALLOW_MSXGL_FIXTURE),
+    reason=("MSXDBG_LIVE_SOCKET, MSXDBG_LIVE_EXECUTION=1 and "
+            "MSXDBG_LIVE_MSXGL_FIXTURE=1 are required"),
+)
+def test_live_msxgl_source_breakpoint_stops_at_compiled_line():
+    envelopes = _run_msxgl_exec(
+        "break debug_fixture.c:17", "continue", "where")
+    stop = envelopes[1]["data"]
+    assert stop["matching_breakpoints"] == [1]
+    assert stop["location"]["source"]["path"].endswith("debug_fixture.c")
+    assert stop["location"]["source"]["line"] == 17
+
+
+@pytest.mark.skipif(
+    not (LIVE_SOCKET and ALLOW_EXECUTION and ALLOW_MSXGL_FIXTURE),
+    reason=("MSXDBG_LIVE_SOCKET, MSXDBG_LIVE_EXECUTION=1 and "
+            "MSXDBG_LIVE_MSXGL_FIXTURE=1 are required"),
+)
+def test_live_issue_3_list_requested_and_current_source_lines():
+    envelopes = _run_msxgl_exec(
+        "break debug_fixture.c:17", "continue",
+        "list debug_fixture.c:16", "list")
+
+    requested = envelopes[2]["data"]
+    current = envelopes[3]["data"]
+    assert requested["focal_line"] == 16
+    assert requested["path"].endswith("debug_fixture.c")
+    assert current["focal_line"] == 17
+    assert current["path"].endswith("debug_fixture.c")
+
+
+@pytest.mark.skipif(
+    not (LIVE_SOCKET and ALLOW_BREAKPOINTS and ALLOW_MSXGL_FIXTURE),
+    reason=("MSXDBG_LIVE_SOCKET, MSXDBG_LIVE_BREAKPOINTS=1 and "
+            "MSXDBG_LIVE_MSXGL_FIXTURE=1 are required"),
+)
+def test_live_issue_4_info_breakpoints_includes_source_location():
+    envelopes = _run_msxgl_exec(
+        "break debug_fixture.c:17", "info breakpoints")
+
+    breakpoint = envelopes[1]["data"]["breakpoints"][0]
+    assert breakpoint["address"] == 0x4065
+    assert breakpoint["location"]["source"]["path"].endswith(
+        "debug_fixture.c")
+    assert breakpoint["location"]["source"]["line"] == 17
+
+
+@pytest.mark.skipif(
+    not (LIVE_SOCKET and ALLOW_EXECUTION and ALLOW_MSXGL_FIXTURE),
+    reason=("MSXDBG_LIVE_SOCKET, MSXDBG_LIVE_EXECUTION=1 and "
+            "MSXDBG_LIVE_MSXGL_FIXTURE=1 are required"),
+)
+def test_live_issue_7_backtrace_after_external_stop():
+    root, fixture = _msxgl_fixture()
+    loaded = ProjectLoader().load(ProjectSpec((ImageSpec(
+        ImageId("msxgl-debug"), fixture / "out"),), (fixture,)))
+    target = _target()
+    session = Session(loaded.project, target, SessionConfig(),
+                      SafetyGate(), _LiveClock())
+    try:
+        assert session.attach() == SessionState.STOPPED
+        session.invalidate()
+        target.continue_execution()
+        time.sleep(0.05)
+        target.interrupt()
+        deadline = time.monotonic() + 5.0
+        while target.execution_status() != ExecutionStatus.STOPPED:
+            if time.monotonic() >= deadline:
+                pytest.fail("openMSX did not acknowledge the external stop")
+            time.sleep(0.05)
+
+        trace = session.backtrace()
+
+        assert session.state == SessionState.STOPPED
+        assert trace.frames
+        assert trace.frames[0].pc == session.where().snapshot.registers.get("PC")
+    finally:
+        target.close()
