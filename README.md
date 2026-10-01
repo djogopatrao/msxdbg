@@ -76,4 +76,5 @@ falls back where possible and otherwise reports the missing capability.
 
 Compatibility boundaries are documented in [COMPATIBILITY.md](COMPATIBILITY.md).
 The JSON stability contract is in [JSON_COMPATIBILITY.md](JSON_COMPATIBILITY.md).
-
+Architecture, specifications, planning, test design, and phase reports are
+indexed in [docs/development](docs/development/README.md).

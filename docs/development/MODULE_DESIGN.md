@@ -1,6 +1,6 @@
 # msxdbg — Projeto dos módulos e contratos públicos
 
-Proposta anterior à implementação, baseada em [SPEC.md](SPEC.md), [ARCHITECTURE.md](ARCHITECTURE.md) e [COMMANDS.md](COMMANDS.md). Define responsabilidades, dados, interfaces e colaboração; não afirma que essas classes já existem. Métodos privados, algoritmos internos e subdivisões de arquivos podem evoluir sem alterar os contratos aqui descritos.
+Proposta anterior à implementação, baseada em [SPEC.md](SPEC.md), [ARCHITECTURE.md](ARCHITECTURE.md) e [COMMANDS.md](../../COMMANDS.md). Define responsabilidades, dados, interfaces e colaboração; não afirma que essas classes já existem. Métodos privados, algoritmos internos e subdivisões de arquivos podem evoluir sem alterar os contratos aqui descritos.
 
 ## 1. Convenções e regras de dependência
 

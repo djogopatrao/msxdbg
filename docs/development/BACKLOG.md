@@ -1,6 +1,6 @@
 # msxdbg — Backlog de funcionalidades e requisitos
 
-Análise da [SPEC.md](SPEC.md), especialmente §§7–8, complementada pelo §12 de [COMMANDS.md](COMMANDS.md), pela [arquitetura](ARCHITECTURE.md) e pelo [desenho dos módulos](MODULE_DESIGN.md).
+Análise da [SPEC.md](SPEC.md), especialmente §§7–8, complementada pelo §12 de [COMMANDS.md](../../COMMANDS.md), pela [arquitetura](ARCHITECTURE.md) e pelo [desenho dos módulos](MODULE_DESIGN.md).
 
 Este backlog registra trabalho futuro e o estado dos itens já entregues. Prioridades são propostas de ordenação, não datas de entrega. A SPEC permanece como referência histórica; este documento consolida os requisitos da evolução.
 

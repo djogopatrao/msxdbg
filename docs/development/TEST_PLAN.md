@@ -1,6 +1,6 @@
 # msxdbg — Plano de testes por módulo e função
 
-Base: [MODULE_DESIGN.md](MODULE_DESIGN.md), [COMMANDS.md](COMMANDS.md), [ARCHITECTURE.md](ARCHITECTURE.md), [BACKLOG.md](BACKLOG.md) e o comportamento histórico explicitamente preservado de [SPEC.md](SPEC.md).
+Base: [MODULE_DESIGN.md](MODULE_DESIGN.md), [COMMANDS.md](../../COMMANDS.md), [ARCHITECTURE.md](ARCHITECTURE.md), [BACKLOG.md](BACKLOG.md) e o comportamento histórico explicitamente preservado de [SPEC.md](SPEC.md).
 
 Este documento planeja e rastreia testes; resultados de execução pertencem ao CI ou à revisão da mudança. O repositório contém contratos estruturais e o primeiro incremento funcional, `parse_map`, com fixtures sintéticas de MAP. Os demais componentes podem continuar como stubs até seus incrementos próprios. As regras F17/F18 prevalecem sobre print legado onde diferem. Funções repetidas no desenho são um único contrato; métodos de Protocol são testados pelas implementações e pelos consumidores, não pela instanciação do protocolo.
 
